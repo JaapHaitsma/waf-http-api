@@ -7,9 +7,8 @@ const project = new awscdk.AwsCdkConstructLibrary({
   author: "Jaap Haitsma",
   authorAddress: "jaap@haitsma.org",
   copyrightOwner: "Merapar Technologies Group B.V.",
-  license:
-    "MIT" /* The license for the project. This is used to generate the LICENSE file. */,
-  cdkVersion: "2.1.0",
+  license: "MIT",
+  cdkVersion: "2.200.0",
   defaultReleaseBranch: "main",
   jsiiVersion: "~5.8.0",
 
