@@ -18,6 +18,7 @@
     "package": "npx projen package",
     "package-all": "npx projen package-all",
     "package:js": "npx projen package:js",
+    "package:python": "npx projen package:python",
     "post-compile": "npx projen post-compile",
     "post-upgrade": "npx projen post-upgrade",
     "pre-compile": "npx projen pre-compile",
@@ -63,7 +64,12 @@
     "constructs": "^10.0.5"
   },
   "keywords": [
-    "cdk"
+    "api-gateway",
+    "aws",
+    "cdk",
+    "cloudfront",
+    "http-api",
+    "waf"
   ],
   "main": "lib/index.js",
   "license": "MIT",
@@ -120,7 +126,12 @@
   "stability": "stable",
   "jsii": {
     "outdir": "dist",
-    "targets": {},
+    "targets": {
+      "python": {
+        "distName": "merapar.waf-http-api",
+        "module": "pepperize_waf_http_api"
+      }
+    },
     "tsc": {
       "outDir": "lib",
       "rootDir": "src"
