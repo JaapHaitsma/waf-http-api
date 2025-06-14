@@ -1,17 +1,23 @@
-import { awscdk } from 'projen';
+import { awscdk } from "projen";
 const project = new awscdk.AwsCdkConstructLibrary({
-  author: 'Jaap Haitsma',
-  authorAddress: 'jaap@haitsma.org',
-  cdkVersion: '2.1.0',
-  defaultReleaseBranch: 'main',
-  jsiiVersion: '~5.8.0',
-  name: 'waf-http-api',
+  name: "@merapar/waf-http-api",
+  packageName: "waf-http-api",
+  description:
+    "CDK construct that is WAF before an HTTP API. This cannot be done directly. A cloudfront distribution has to be put in between. This CDK construct does this" /* The description is just a string that helps people understand the purpose of the package. */,
+  author: "Jaap Haitsma",
+  authorAddress: "jaap@haitsma.org",
+  copyrightOwner: "Merapar Technologies Group B.V.",
+  license:
+    "MIT" /* The license for the project. This is used to generate the LICENSE file. */,
+  cdkVersion: "2.1.0",
+  defaultReleaseBranch: "main",
+  jsiiVersion: "~5.8.0",
+
   projenrcTs: true,
-  repositoryUrl: 'https://github.com/jaap/waf-http-api.git',
+  repositoryUrl: "https://github.com/merapar/waf-http-api.git",
 
   // deps: [],                /* Runtime dependencies of this module. */
-  // description: undefined,  /* The description is just a string that helps people understand the purpose of the package. */
   // devDeps: [],             /* Build dependencies for this module. */
-  // packageName: undefined,  /* The "name" in package.json. */
+  gitignore: [".vscode"],
 });
 project.synth();

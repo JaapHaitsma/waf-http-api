@@ -1,8 +1,9 @@
 {
   "name": "waf-http-api",
+  "description": "CDK construct that is WAF before an HTTP API. This cannot be done directly. A cloudfront distribution has to be put in between. This CDK construct does this",
   "repository": {
     "type": "git",
-    "url": "https://github.com/jaap/waf-http-api.git"
+    "url": "https://github.com/merapar/waf-http-api.git"
   },
   "scripts": {
     "build": "npx projen build",
@@ -65,7 +66,7 @@
     "cdk"
   ],
   "main": "lib/index.js",
-  "license": "Apache-2.0",
+  "license": "MIT",
   "publishConfig": {
     "access": "public"
   },
