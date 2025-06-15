@@ -1,11 +1,11 @@
-import * as crypto from "crypto";
-import * as cdk from "aws-cdk-lib";
-import { Fn } from "aws-cdk-lib";
-import { HttpApi } from "aws-cdk-lib/aws-apigatewayv2";
-import * as cloudfront from "aws-cdk-lib/aws-cloudfront";
-import * as origins from "aws-cdk-lib/aws-cloudfront-origins";
-import * as wafv2 from "aws-cdk-lib/aws-wafv2";
-import { Construct } from "constructs";
+import * as crypto from 'crypto';
+import * as cdk from 'aws-cdk-lib';
+import { Fn } from 'aws-cdk-lib';
+import { HttpApi } from 'aws-cdk-lib/aws-apigatewayv2';
+import * as cloudfront from 'aws-cdk-lib/aws-cloudfront';
+import * as origins from 'aws-cdk-lib/aws-cloudfront-origins';
+import * as wafv2 from 'aws-cdk-lib/aws-wafv2';
+import { Construct } from 'constructs';
 
 /**
  * @interface WafHttpApiProps
@@ -48,7 +48,7 @@ export class WafHttpApi extends Construct {
    * a Lambda Authorizer for API Gateway) to verify that the request originated
    * from CloudFront and not directly from the internet.
    */
-  public static readonly SECRET_HEADER_NAME = "X-Origin-Verify";
+  public static readonly SECRET_HEADER_NAME = 'X-Origin-Verify';
 
   /**
    * @readonly
@@ -78,10 +78,73 @@ export class WafHttpApi extends Construct {
   constructor(scope: Construct, id: string, props: WafHttpApiProps) {
     super(scope, id);
 
+    /**
+     * @example
+     * // Example usage within a CDK Stack:
+     * import { Stack, StackProps } from 'aws-cdk-lib';
+     * import { HttpApi, HttpMethod, HttpIntegration } from 'aws-cdk-lib/aws-apigatewayv2';
+     * import { HttpLambdaIntegration } from 'aws-cdk-lib/aws-apigatewayv2-integrations';
+     * import { NodejsFunction } from 'aws-cdk-lib/aws-lambda-nodejs';
+     * import { Runtime } from 'aws-cdk-lib/aws-lambda';
+     * import { WafHttpApi } from './waf-http-api'; // Assuming your construct is in this path
+     *
+     * // Define a simple Lambda function to integrate with the API Gateway
+     * const myLambda = new NodejsFunction(this, 'MyApiHandler', {
+     * runtime: Runtime.NODEJS_18_X,
+     * handler: 'handler',
+     * entry: 'path/to/your/lambda/code.ts', // Specify the path to your Lambda function code
+     * });
+     *
+     * // Create an HTTP API Gateway
+     * const httpApi = new HttpApi(this, 'MyHttpApi', {
+     * description: 'My example HTTP API',
+     * });
+     *
+     * // Add a route to the HTTP API that integrates with the Lambda function
+     * httpApi.addRoutes({
+     * path: '/hello',
+     * methods: [HttpMethod.GET],
+     * integration: new HttpLambdaIntegration('MyLambdaIntegration', myLambda),
+     * });
+     *
+     * // Instantiate the WafHttpApi construct to protect the HTTP API
+     * const protectedApi = new WafHttpApi(this, 'ProtectedMyApi', {
+     * httpApi: httpApi,
+     * // Optionally, provide custom WAF rules:
+     * // wafRules: [
+     * //   {
+     * //     name: 'MyCustomIpBlockRule',
+     * //     priority: 10,
+     * //     statement: {
+     * //       ipSetReferenceStatement: { arn: 'arn:aws:wafv2:...' }
+     * //     },
+     * //     action: { block: {} },
+     * //     visibilityConfig: {
+     * //       cloudWatchMetricsEnabled: true,
+     * //       metricName: 'MyCustomIpBlock',
+     * //       sampledRequestsEnabled: true,
+     * //     },
+     * //   },
+     * // ],
+     * });
+     *
+     * // Output the CloudFront URL of the protected API
+     * new cdk.CfnOutput(this, 'ProtectedApiEndpoint', {
+     * value: protectedApi.distribution.distributionDomainName,
+     * description: 'The CloudFront URL for the protected API endpoint',
+     * });
+     *
+     * // Output the secret header value for use in a Lambda authorizer if needed
+     * new cdk.CfnOutput(this, 'OriginVerificationSecret', {
+     * value: protectedApi.secretHeaderValue,
+     * description: 'Secret value to verify CloudFront origin requests',
+     * });
+     */
+
     // Generate a cryptographically strong random hex string for the secret header value.
     // This ensures that the secret is unique and difficult to guess, enhancing security
     // when used for origin verification.
-    this.secretHeaderValue = crypto.randomBytes(16).toString("hex");
+    this.secretHeaderValue = crypto.randomBytes(16).toString('hex');
 
     // Determine which WAF rules to apply. If custom rules are provided via props, use them.
     // Otherwise, fall back to the default managed rules defined in `createDefaultRules()`.
@@ -89,11 +152,11 @@ export class WafHttpApi extends Construct {
 
     // 1. Create the AWS WAF WebACL (Web Access Control List)
     // This WebACL will be associated with the CloudFront distribution to filter web traffic.
-    const webAcl = new wafv2.CfnWebACL(this, id + "WebAcl", {
+    const webAcl = new wafv2.CfnWebACL(this, id + 'WebAcl', {
       // Default action for requests that don't match any rules. 'allow' means they pass through.
       defaultAction: { allow: {} },
       // The scope MUST be 'CLOUDFRONT' for a WebACL to be associated with a CloudFront distribution.
-      scope: "CLOUDFRONT",
+      scope: 'CLOUDFRONT',
       // Configuration for CloudWatch metrics and sampled requests, useful for monitoring WAF activity.
       visibilityConfig: {
         cloudWatchMetricsEnabled: true, // Enable metrics to view WAF performance in CloudWatch.
@@ -109,7 +172,7 @@ export class WafHttpApi extends Construct {
     // providing CDN benefits like caching and reduced latency, and integrating with WAF.
     this.distribution = new cloudfront.Distribution(
       this,
-      id + "ApiDistribution",
+      id + 'ApiDistribution',
       {
         comment: `CloudFront distribution for HTTP API: ${props.httpApi.httpApiId}`, // Descriptive comment for the distribution.
         // Associate the created WAF WebACL with this CloudFront distribution.
@@ -122,7 +185,7 @@ export class WafHttpApi extends Construct {
           // `Fn.select(2, Fn.split("/", props.httpApi.url!))` extracts the domain name
           // from the HTTP API's URL (e.g., "abcdef.execute-api.us-east-1.amazonaws.com").
           origin: new origins.HttpOrigin(
-            Fn.select(2, Fn.split("/", props.httpApi.url!)),
+            Fn.select(2, Fn.split('/', props.httpApi.url!)),
             {
               // Enforce HTTPS-only communication between CloudFront and the origin.
               protocolPolicy: cloudfront.OriginProtocolPolicy.HTTPS_ONLY,
@@ -131,7 +194,7 @@ export class WafHttpApi extends Construct {
               customHeaders: {
                 [WafHttpApi.SECRET_HEADER_NAME]: this.secretHeaderValue,
               },
-            }
+            },
           ),
           // Redirect all HTTP viewer requests to HTTPS to ensure secure communication.
           viewerProtocolPolicy:
@@ -147,15 +210,15 @@ export class WafHttpApi extends Construct {
           originRequestPolicy:
             cloudfront.OriginRequestPolicy.ALL_VIEWER_EXCEPT_HOST_HEADER,
         },
-      }
+      },
     );
 
     // 3. Output the CloudFront distribution's domain name
     // This CfnOutput makes the URL of the protected API easily accessible
     // after deployment in the CloudFormation console.
-    new cdk.CfnOutput(this, "ProtectedApiUrl", {
+    new cdk.CfnOutput(this, 'ProtectedApiUrl', {
       value: `https://${this.distribution.distributionDomainName}`,
-      description: "The URL of the WAF-protected API endpoint.",
+      description: 'The URL of the WAF-protected API endpoint.',
     });
   }
 
@@ -169,13 +232,13 @@ export class WafHttpApi extends Construct {
   private createDefaultRules(): wafv2.CfnWebACL.RuleProperty[] {
     return [
       {
-        name: "AWS-AWSManagedRulesAmazonIpReputationList",
+        name: 'AWS-AWSManagedRulesAmazonIpReputationList',
         priority: 1, // Rules are evaluated in order of priority (lower number first).
         statement: {
           // Specifies a managed rule group provided by AWS.
           managedRuleGroupStatement: {
-            vendorName: "AWS",
-            name: "AWSManagedRulesAmazonIpReputationList", // This rule group blocks known malicious IP addresses.
+            vendorName: 'AWS',
+            name: 'AWSManagedRulesAmazonIpReputationList', // This rule group blocks known malicious IP addresses.
           },
         },
         // The `none` action means the rule group's default action (usually 'block') will apply.
@@ -183,23 +246,23 @@ export class WafHttpApi extends Construct {
         // Configuration for CloudWatch metrics and sampled requests for this specific rule.
         visibilityConfig: {
           cloudWatchMetricsEnabled: true,
-          metricName: "awsManagedRulesAmazonIpReputationList",
+          metricName: 'awsManagedRulesAmazonIpReputationList',
           sampledRequestsEnabled: true,
         },
       },
       {
-        name: "AWS-AWSManagedRulesCommonRuleSet",
+        name: 'AWS-AWSManagedRulesCommonRuleSet',
         priority: 2,
         statement: {
           managedRuleGroupStatement: {
-            vendorName: "AWS",
-            name: "AWSManagedRulesCommonRuleSet", // This rule group protects against a broad range of common web exploits.
+            vendorName: 'AWS',
+            name: 'AWSManagedRulesCommonRuleSet', // This rule group protects against a broad range of common web exploits.
           },
         },
         overrideAction: { none: {} },
         visibilityConfig: {
           cloudWatchMetricsEnabled: true,
-          metricName: "awsManagedRulesCommonRuleSet",
+          metricName: 'awsManagedRulesCommonRuleSet',
           sampledRequestsEnabled: true,
         },
       },

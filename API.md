@@ -4,8 +4,6 @@
 
 ### WafHttpApi <a name="WafHttpApi" id="waf-http-api.WafHttpApi"></a>
 
-A CDK construct that fronts an HTTP API with a CloudFront distribution and protects it with AWS WAF.
-
 #### Initializers <a name="Initializers" id="waf-http-api.WafHttpApi.Initializer"></a>
 
 ```typescript
@@ -16,9 +14,9 @@ new WafHttpApi(scope: Construct, id: string, props: WafHttpApiProps)
 
 | **Name** | **Type** | **Description** |
 | --- | --- | --- |
-| <code><a href="#waf-http-api.WafHttpApi.Initializer.parameter.scope">scope</a></code> | <code>constructs.Construct</code> | *No description.* |
-| <code><a href="#waf-http-api.WafHttpApi.Initializer.parameter.id">id</a></code> | <code>string</code> | *No description.* |
-| <code><a href="#waf-http-api.WafHttpApi.Initializer.parameter.props">props</a></code> | <code><a href="#waf-http-api.WafHttpApiProps">WafHttpApiProps</a></code> | *No description.* |
+| <code><a href="#waf-http-api.WafHttpApi.Initializer.parameter.scope">scope</a></code> | <code>constructs.Construct</code> | The scope in which to define this construct (e.g., a CDK Stack). |
+| <code><a href="#waf-http-api.WafHttpApi.Initializer.parameter.id">id</a></code> | <code>string</code> | The unique identifier for this construct within its scope. |
+| <code><a href="#waf-http-api.WafHttpApi.Initializer.parameter.props">props</a></code> | <code><a href="#waf-http-api.WafHttpApiProps">WafHttpApiProps</a></code> | The properties required to configure this construct, including the target HTTP API and optional WAF rules. |
 
 ---
 
@@ -26,17 +24,23 @@ new WafHttpApi(scope: Construct, id: string, props: WafHttpApiProps)
 
 - *Type:* constructs.Construct
 
+The scope in which to define this construct (e.g., a CDK Stack).
+
 ---
 
 ##### `id`<sup>Required</sup> <a name="id" id="waf-http-api.WafHttpApi.Initializer.parameter.id"></a>
 
 - *Type:* string
 
+The unique identifier for this construct within its scope.
+
 ---
 
 ##### `props`<sup>Required</sup> <a name="props" id="waf-http-api.WafHttpApi.Initializer.parameter.props"></a>
 
 - *Type:* <a href="#waf-http-api.WafHttpApiProps">WafHttpApiProps</a>
+
+The properties required to configure this construct, including the target HTTP API and optional WAF rules.
 
 ---
 
@@ -87,8 +91,8 @@ Any object.
 | **Name** | **Type** | **Description** |
 | --- | --- | --- |
 | <code><a href="#waf-http-api.WafHttpApi.property.node">node</a></code> | <code>constructs.Node</code> | The tree node. |
-| <code><a href="#waf-http-api.WafHttpApi.property.distribution">distribution</a></code> | <code>aws-cdk-lib.aws_cloudfront.Distribution</code> | The CloudFront distribution created by the construct. |
-| <code><a href="#waf-http-api.WafHttpApi.property.secretHeaderValue">secretHeaderValue</a></code> | <code>string</code> | The generated secret value for the custom header. |
+| <code><a href="#waf-http-api.WafHttpApi.property.distribution">distribution</a></code> | <code>aws-cdk-lib.aws_cloudfront.Distribution</code> | *No description.* |
+| <code><a href="#waf-http-api.WafHttpApi.property.secretHeaderValue">secretHeaderValue</a></code> | <code>string</code> | *No description.* |
 
 ---
 
@@ -112,8 +116,6 @@ public readonly distribution: Distribution;
 
 - *Type:* aws-cdk-lib.aws_cloudfront.Distribution
 
-The CloudFront distribution created by the construct.
-
 ---
 
 ##### `secretHeaderValue`<sup>Required</sup> <a name="secretHeaderValue" id="waf-http-api.WafHttpApi.property.secretHeaderValue"></a>
@@ -124,17 +126,13 @@ public readonly secretHeaderValue: string;
 
 - *Type:* string
 
-The generated secret value for the custom header.
-
-Use this value in your HTTP API's authorizer.
-
 ---
 
 #### Constants <a name="Constants" id="Constants"></a>
 
 | **Name** | **Type** | **Description** |
 | --- | --- | --- |
-| <code><a href="#waf-http-api.WafHttpApi.property.SECRET_HEADER_NAME">SECRET_HEADER_NAME</a></code> | <code>string</code> | The name of the custom header CloudFront will add. |
+| <code><a href="#waf-http-api.WafHttpApi.property.SECRET_HEADER_NAME">SECRET_HEADER_NAME</a></code> | <code>string</code> | *No description.* |
 
 ---
 
@@ -146,17 +144,11 @@ public readonly SECRET_HEADER_NAME: string;
 
 - *Type:* string
 
-The name of the custom header CloudFront will add.
-
-Use this in your Lambda Authorizer.
-
 ---
 
 ## Structs <a name="Structs" id="Structs"></a>
 
 ### WafHttpApiProps <a name="WafHttpApiProps" id="waf-http-api.WafHttpApiProps"></a>
-
-Properties for the WafForHttpApi construct.
 
 #### Initializer <a name="Initializer" id="waf-http-api.WafHttpApiProps.Initializer"></a>
 
@@ -171,7 +163,7 @@ const wafHttpApiProps: WafHttpApiProps = { ... }
 | **Name** | **Type** | **Description** |
 | --- | --- | --- |
 | <code><a href="#waf-http-api.WafHttpApiProps.property.httpApi">httpApi</a></code> | <code>aws-cdk-lib.aws_apigatewayv2.HttpApi</code> | The HTTP API to be protected by the WAF and CloudFront. |
-| <code><a href="#waf-http-api.WafHttpApiProps.property.wafRules">wafRules</a></code> | <code>aws-cdk-lib.aws_wafv2.CfnWebACL.RuleProperty[]</code> | Optional: Custom WAF rules to apply. |
+| <code><a href="#waf-http-api.WafHttpApiProps.property.wafRules">wafRules</a></code> | <code>aws-cdk-lib.aws_wafv2.CfnWebACL.RuleProperty[]</code> | Optional: Custom WAF rules to apply to the WebACL. |
 
 ---
 
@@ -185,6 +177,8 @@ public readonly httpApi: HttpApi;
 
 The HTTP API to be protected by the WAF and CloudFront.
 
+This should be an instance of `aws-cdk-lib/aws-apigatewayv2.HttpApi`.
+
 ---
 
 ##### `wafRules`<sup>Optional</sup> <a name="wafRules" id="waf-http-api.WafHttpApiProps.property.wafRules"></a>
@@ -194,10 +188,13 @@ public readonly wafRules: RuleProperty[];
 ```
 
 - *Type:* aws-cdk-lib.aws_wafv2.CfnWebACL.RuleProperty[]
+- *Default:* AWS Managed Rules (AmazonIpReputationList, CommonRuleSet)
 
-Optional: Custom WAF rules to apply.
+Optional: Custom WAF rules to apply to the WebACL.
 
-If not provided, a default set of AWS Managed Rules will be used.
+If not provided, a default set of AWS Managed Rules will be used,
+specifically "AWSManagedRulesAmazonIpReputationList" and "AWSManagedRulesCommonRuleSet".
+These rules help protect against common web exploits and unwanted traffic.
 
 ---
 
