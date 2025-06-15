@@ -20,9 +20,9 @@ npm install waf-http-api
 
 ### Python
 
-```bash
+<!-- ```bash
 pip install waf-http-api
-```
+``` -->
 
 ## Usage
 
