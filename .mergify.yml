@@ -3,11 +3,6 @@
 queue_rules:
   - name: default
     update_method: merge
-    conditions:
-      - "#approved-reviews-by>=1"
-      - -label~=(do-not-merge)
-      - status-success=build
-      - status-success=package-js
     merge_method: squash
     commit_message_template: |-
       {{ title }} (#{{ number }})
