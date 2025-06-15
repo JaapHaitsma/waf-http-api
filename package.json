@@ -67,6 +67,7 @@
   "keywords": [
     "api-gateway",
     "aws",
+    "awscdk",
     "cdk",
     "cloudfront",
     "http-api",
