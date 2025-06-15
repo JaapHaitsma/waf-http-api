@@ -21,7 +21,7 @@ npm install waf-http-api
 ### Python
 
 ```bash
-pip install merapar.waf-http-api
+pip install waf-http-api
 ```
 
 ## Usage
