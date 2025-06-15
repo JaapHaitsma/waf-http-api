@@ -29,47 +29,47 @@ pip install merapar.waf-http-api
 This example shows how to protect an HTTP API with WAF and CloudFront:
 
 ```typescript
-import { Stack, StackProps } from 'aws-cdk-lib';
-import { HttpApi, HttpMethod } from 'aws-cdk-lib/aws-apigatewayv2';
-import { HttpLambdaIntegration } from 'aws-cdk-lib/aws-apigatewayv2-integrations';
-import { NodejsFunction } from 'aws-cdk-lib/aws-lambda-nodejs';
-import { Runtime } from 'aws-cdk-lib/aws-lambda';
-import { WafHttpApi } from 'waf-http-api';
+import { Stack, StackProps } from "aws-cdk-lib";
+import { HttpApi, HttpMethod } from "aws-cdk-lib/aws-apigatewayv2";
+import { HttpLambdaIntegration } from "aws-cdk-lib/aws-apigatewayv2-integrations";
+import { NodejsFunction } from "aws-cdk-lib/aws-lambda-nodejs";
+import { Runtime } from "aws-cdk-lib/aws-lambda";
+import { WafHttpApi } from "waf-http-api";
 
 class MyStack extends Stack {
   constructor(scope: Construct, id: string, props?: StackProps) {
     super(scope, id, props);
 
-    const myLambda = new NodejsFunction(this, 'MyApiHandler', {
+    const myLambda = new NodejsFunction(this, "MyApiHandler", {
       runtime: Runtime.NODEJS_18_X,
-      handler: 'handler',
-      entry: 'lambda/handler.ts',
+      handler: "handler",
+      entry: "lambda/handler.ts",
     });
 
-    const httpApi = new HttpApi(this, 'MyHttpApi', {
-      description: 'My example HTTP API',
+    const httpApi = new HttpApi(this, "MyHttpApi", {
+      description: "My example HTTP API",
     });
 
     httpApi.addRoutes({
-      path: '/hello',
+      path: "/hello",
       methods: [HttpMethod.GET],
-      integration: new HttpLambdaIntegration('MyLambdaIntegration', myLambda),
+      integration: new HttpLambdaIntegration("MyLambdaIntegration", myLambda),
     });
 
-    const protectedApi = new WafHttpApi(this, 'ProtectedMyApi', {
+    const protectedApi = new WafHttpApi(this, "ProtectedMyApi", {
       httpApi: httpApi,
       // Optionally, provide custom WAF rules:
       // wafRules: [ ... ],
     });
 
-    new cdk.CfnOutput(this, 'ProtectedApiEndpoint', {
+    new cdk.CfnOutput(this, "ProtectedApiEndpoint", {
       value: protectedApi.distribution.distributionDomainName,
-      description: 'The CloudFront URL for the protected API endpoint',
+      description: "The CloudFront URL for the protected API endpoint",
     });
 
-    new cdk.CfnOutput(this, 'OriginVerificationSecret', {
+    new cdk.CfnOutput(this, "OriginVerificationSecret", {
       value: protectedApi.secretHeaderValue,
-      description: 'Secret value to verify CloudFront origin requests',
+      description: "Secret value to verify CloudFront origin requests",
     });
   }
 }
