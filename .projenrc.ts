@@ -15,7 +15,7 @@ const project = new awscdk.AwsCdkConstructLibrary({
   jsiiVersion: "~5.8.0",
 
   projenrcTs: true,
-  repositoryUrl: "https://github.com/merapar/waf-http-api.git",
+  repositoryUrl: "https://github.com/JaapHaitsma/waf-http-api.git",
 
   gitignore: [".vscode"],
 

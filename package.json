@@ -3,7 +3,7 @@
   "description": "A CDK construct that fronts an HTTP API with a CloudFront distribution and protects it with AWS WAF.",
   "repository": {
     "type": "git",
-    "url": "https://github.com/merapar/waf-http-api.git"
+    "url": "https://github.com/JaapHaitsma/waf-http-api.git"
   },
   "scripts": {
     "build": "npx projen build",
