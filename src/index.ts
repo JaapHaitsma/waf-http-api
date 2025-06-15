@@ -1,11 +1,11 @@
-import * as crypto from 'crypto';
-import * as cdk from 'aws-cdk-lib';
-import { Fn } from 'aws-cdk-lib';
-import { HttpApi } from 'aws-cdk-lib/aws-apigatewayv2';
-import * as cloudfront from 'aws-cdk-lib/aws-cloudfront';
-import * as origins from 'aws-cdk-lib/aws-cloudfront-origins';
-import * as wafv2 from 'aws-cdk-lib/aws-wafv2';
-import { Construct } from 'constructs';
+import * as crypto from "crypto";
+import * as cdk from "aws-cdk-lib";
+import { Fn } from "aws-cdk-lib";
+import { HttpApi } from "aws-cdk-lib/aws-apigatewayv2";
+import * as cloudfront from "aws-cdk-lib/aws-cloudfront";
+import * as origins from "aws-cdk-lib/aws-cloudfront-origins";
+import * as wafv2 from "aws-cdk-lib/aws-wafv2";
+import { Construct } from "constructs";
 
 /**
  * @interface WafHttpApiProps
@@ -48,7 +48,7 @@ export class WafHttpApi extends Construct {
    * a Lambda Authorizer for API Gateway) to verify that the request originated
    * from CloudFront and not directly from the internet.
    */
-  public static readonly SECRET_HEADER_NAME = 'X-Origin-Verify';
+  public static readonly SECRET_HEADER_NAME = "X-Origin-Verify";
 
   /**
    * @readonly
@@ -144,7 +144,7 @@ export class WafHttpApi extends Construct {
     // Generate a cryptographically strong random hex string for the secret header value.
     // This ensures that the secret is unique and difficult to guess, enhancing security
     // when used for origin verification.
-    this.secretHeaderValue = crypto.randomBytes(16).toString('hex');
+    this.secretHeaderValue = crypto.randomBytes(16).toString("hex");
 
     // Determine which WAF rules to apply. If custom rules are provided via props, use them.
     // Otherwise, fall back to the default managed rules defined in `createDefaultRules()`.
@@ -152,11 +152,11 @@ export class WafHttpApi extends Construct {
 
     // 1. Create the AWS WAF WebACL (Web Access Control List)
     // This WebACL will be associated with the CloudFront distribution to filter web traffic.
-    const webAcl = new wafv2.CfnWebACL(this, id + 'WebAcl', {
+    const webAcl = new wafv2.CfnWebACL(this, id + "WebAcl", {
       // Default action for requests that don't match any rules. 'allow' means they pass through.
       defaultAction: { allow: {} },
       // The scope MUST be 'CLOUDFRONT' for a WebACL to be associated with a CloudFront distribution.
-      scope: 'CLOUDFRONT',
+      scope: "CLOUDFRONT",
       // Configuration for CloudWatch metrics and sampled requests, useful for monitoring WAF activity.
       visibilityConfig: {
         cloudWatchMetricsEnabled: true, // Enable metrics to view WAF performance in CloudWatch.
@@ -172,7 +172,7 @@ export class WafHttpApi extends Construct {
     // providing CDN benefits like caching and reduced latency, and integrating with WAF.
     this.distribution = new cloudfront.Distribution(
       this,
-      id + 'ApiDistribution',
+      id + "ApiDistribution",
       {
         comment: `CloudFront distribution for HTTP API: ${props.httpApi.httpApiId}`, // Descriptive comment for the distribution.
         // Associate the created WAF WebACL with this CloudFront distribution.
@@ -185,7 +185,7 @@ export class WafHttpApi extends Construct {
           // `Fn.select(2, Fn.split("/", props.httpApi.url!))` extracts the domain name
           // from the HTTP API's URL (e.g., "abcdef.execute-api.us-east-1.amazonaws.com").
           origin: new origins.HttpOrigin(
-            Fn.select(2, Fn.split('/', props.httpApi.url!)),
+            Fn.select(2, Fn.split("/", props.httpApi.url!)),
             {
               // Enforce HTTPS-only communication between CloudFront and the origin.
               protocolPolicy: cloudfront.OriginProtocolPolicy.HTTPS_ONLY,
@@ -216,9 +216,9 @@ export class WafHttpApi extends Construct {
     // 3. Output the CloudFront distribution's domain name
     // This CfnOutput makes the URL of the protected API easily accessible
     // after deployment in the CloudFormation console.
-    new cdk.CfnOutput(this, 'ProtectedApiUrl', {
+    new cdk.CfnOutput(this, "ProtectedApiUrl", {
       value: `https://${this.distribution.distributionDomainName}`,
-      description: 'The URL of the WAF-protected API endpoint.',
+      description: "The URL of the WAF-protected API endpoint.",
     });
   }
 
@@ -232,13 +232,13 @@ export class WafHttpApi extends Construct {
   private createDefaultRules(): wafv2.CfnWebACL.RuleProperty[] {
     return [
       {
-        name: 'AWS-AWSManagedRulesAmazonIpReputationList',
+        name: "AWS-AWSManagedRulesAmazonIpReputationList",
         priority: 1, // Rules are evaluated in order of priority (lower number first).
         statement: {
           // Specifies a managed rule group provided by AWS.
           managedRuleGroupStatement: {
-            vendorName: 'AWS',
-            name: 'AWSManagedRulesAmazonIpReputationList', // This rule group blocks known malicious IP addresses.
+            vendorName: "AWS",
+            name: "AWSManagedRulesAmazonIpReputationList", // This rule group blocks known malicious IP addresses.
           },
         },
         // The `none` action means the rule group's default action (usually 'block') will apply.
@@ -246,23 +246,23 @@ export class WafHttpApi extends Construct {
         // Configuration for CloudWatch metrics and sampled requests for this specific rule.
         visibilityConfig: {
           cloudWatchMetricsEnabled: true,
-          metricName: 'awsManagedRulesAmazonIpReputationList',
+          metricName: "awsManagedRulesAmazonIpReputationList",
           sampledRequestsEnabled: true,
         },
       },
       {
-        name: 'AWS-AWSManagedRulesCommonRuleSet',
+        name: "AWS-AWSManagedRulesCommonRuleSet",
         priority: 2,
         statement: {
           managedRuleGroupStatement: {
-            vendorName: 'AWS',
-            name: 'AWSManagedRulesCommonRuleSet', // This rule group protects against a broad range of common web exploits.
+            vendorName: "AWS",
+            name: "AWSManagedRulesCommonRuleSet", // This rule group protects against a broad range of common web exploits.
           },
         },
         overrideAction: { none: {} },
         visibilityConfig: {
           cloudWatchMetricsEnabled: true,
-          metricName: 'awsManagedRulesCommonRuleSet',
+          metricName: "awsManagedRulesCommonRuleSet",
           sampledRequestsEnabled: true,
         },
       },
