@@ -1,6 +1,6 @@
 {
   "name": "waf-http-api",
-  "description": "CDK construct that is WAF before an HTTP API. This cannot be done directly. A cloudfront distribution has to be put in between. This CDK construct does this",
+  "description": "A CDK construct that fronts an HTTP API with a CloudFront distribution and protects it with AWS WAF.",
   "repository": {
     "type": "git",
     "url": "https://github.com/merapar/waf-http-api.git"
@@ -129,7 +129,7 @@
     "targets": {
       "python": {
         "distName": "merapar.waf-http-api",
-        "module": "pepperize_waf_http_api"
+        "module": "merapar_waf_http_api"
       }
     },
     "tsc": {

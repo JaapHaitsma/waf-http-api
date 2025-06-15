@@ -1,10 +1,10 @@
 import { awscdk } from 'projen';
 const project = new awscdk.AwsCdkConstructLibrary({
-  name: '@merapar/waf-http-api',
+  name: 'waf-http-api',
   packageName: 'waf-http-api',
-
+  prerelease: 'beta',
   description:
-    'CDK construct that is WAF before an HTTP API. This cannot be done directly. A cloudfront distribution has to be put in between. This CDK construct does this',
+    'A CDK construct that fronts an HTTP API with a CloudFront distribution and protects it with AWS WAF.',
   keywords: ['aws', 'cdk', 'api-gateway', 'http-api', 'waf', 'cloudfront'],
   author: 'Jaap Haitsma',
   authorAddress: 'jaap@haitsma.org',
