@@ -5,7 +5,15 @@ const project = new awscdk.AwsCdkConstructLibrary({
   prerelease: "beta",
   description:
     "A CDK construct that fronts an HTTP API with a CloudFront distribution and protects it with AWS WAF.",
-  keywords: ["awscdk", "aws", "cdk", "api-gateway", "http-api", "waf", "cloudfront"],
+  keywords: [
+    "awscdk",
+    "aws",
+    "cdk",
+    "api-gateway",
+    "http-api",
+    "waf",
+    "cloudfront",
+  ],
   author: "Jaap Haitsma",
   authorAddress: "jaap@haitsma.org",
   copyrightOwner: "Merapar Technologies Group B.V.",
