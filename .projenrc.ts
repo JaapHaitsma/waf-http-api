@@ -19,11 +19,11 @@ const project = new awscdk.AwsCdkConstructLibrary({
 
   gitignore: ['.vscode'],
 
-  releaseToNpm: true,
+  releaseToNpm: true
 
-  publishToPypi: {
-    distName: 'merapar.waf-http-api',
-    module: 'merapar_waf_http_api',
+  // publishToPypi: {
+  //   distName: 'merapar.waf-http-api',
+  //   module: 'merapar_waf_http_api',
   },
 });
 project.synth();
