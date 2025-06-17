@@ -35,6 +35,25 @@ const project = new awscdk.AwsCdkConstructLibrary({
     distName: "merapar.waf-http-api", // PyPI package name
     module: "merapar_waf_http_api", // Python import path
   },
+  devDeps: [
+    'husky',
+    'lint-staged',
+  ],
 
+});
+
+// 2. Add the "prepare" script to install Husky hooks after `npm install`
+project.package.setScript('prepare', 'husky');
+
+// 3. Add the lint-staged configuration to your package.json
+project.addFields({
+  'lint-staged': {
+    '*.{ts,js}': [
+      'eslint --fix', // Lints and fixes TypeScript/JavaScript files
+    ],
+    '*.{ts,js,json,md,yml,yaml}': [
+      'prettier --write', // Formats all supported file types
+    ],
+  },
 });
 project.synth();

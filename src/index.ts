@@ -4,7 +4,7 @@ import { HttpApi } from "aws-cdk-lib/aws-apigatewayv2";
 import * as cloudfront from "aws-cdk-lib/aws-cloudfront";
 import * as origins from "aws-cdk-lib/aws-cloudfront-origins";
 import * as wafv2 from "aws-cdk-lib/aws-wafv2";
-import { Construct } from "constructs";
+import { Construct } from 'constructs';
 
 /**
  * @interface WafHttpApiProps
