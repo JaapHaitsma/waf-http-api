@@ -1,5 +1,4 @@
 import * as crypto from "crypto";
-import * as cdk from "aws-cdk-lib";
 import { Fn } from "aws-cdk-lib";
 import { HttpApi } from "aws-cdk-lib/aws-apigatewayv2";
 import * as cloudfront from "aws-cdk-lib/aws-cloudfront";
