@@ -41,10 +41,6 @@
       "type": "build"
     },
     {
-      "name": "husky",
-      "type": "build"
-    },
-    {
       "name": "jsii-diff",
       "type": "build"
     },
@@ -65,10 +61,6 @@
     {
       "name": "jsii",
       "version": "~5.8.0",
-      "type": "build"
-    },
-    {
-      "name": "lint-staged",
       "type": "build"
     },
     {
