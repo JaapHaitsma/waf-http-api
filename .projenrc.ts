@@ -2,6 +2,7 @@ import { awscdk } from "projen";
 const project = new awscdk.AwsCdkConstructLibrary({
   name: "waf-http-api",
   packageName: "waf-http-api",
+  majorVersion: 1,
   description:
     "A CDK construct that fronts an HTTP API with a CloudFront distribution and protects it with AWS WAF.",
   keywords: [
@@ -20,6 +21,7 @@ const project = new awscdk.AwsCdkConstructLibrary({
   cdkVersion: "2.200.0",
   defaultReleaseBranch: "main",
   jsiiVersion: "~5.8.0",
+  jest: false,
 
   projenrcTs: true,
   repositoryUrl: "https://github.com/JaapHaitsma/waf-http-api.git",
@@ -33,5 +35,6 @@ const project = new awscdk.AwsCdkConstructLibrary({
     distName: "merapar.waf-http-api", // PyPI package name
     module: "merapar_waf_http_api", // Python import path
   },
+
 });
 project.synth();
