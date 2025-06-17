@@ -29,9 +29,9 @@ const project = new awscdk.AwsCdkConstructLibrary({
   releaseToNpm: true,
   prettier: true,
 
-  // publishToPypi: {
-  //   distName: 'merapar.waf-http-api',
-  //   module: 'merapar_waf_http_api',
-  //},
+  publishToPypi: {
+    distName: 'merapar.waf-http-api',
+    module: 'merapar_waf_http_api',
+  },
 });
 project.synth();
