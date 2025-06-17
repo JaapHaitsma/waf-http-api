@@ -212,14 +212,6 @@ export class WafHttpApi extends Construct {
         },
       },
     );
-
-    // 3. Output the CloudFront distribution's domain name
-    // This CfnOutput makes the URL of the protected API easily accessible
-    // after deployment in the CloudFormation console.
-    new cdk.CfnOutput(this, "ProtectedApiUrl", {
-      value: `https://${this.distribution.distributionDomainName}`,
-      description: "The URL of the WAF-protected API endpoint.",
-    });
   }
 
   /**
