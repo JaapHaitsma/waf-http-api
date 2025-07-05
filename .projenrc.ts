@@ -24,6 +24,11 @@ const project = new awscdk.AwsCdkConstructLibrary({
   jest: false,
   projenrcTs: true,
   repositoryUrl: "https://github.com/JaapHaitsma/waf-http-api.git",
+  depsUpgradeOptions: {
+    workflowOptions: {
+      schedule: { cron: [] }, // Keep a schedule, or set to empty array to disable
+    },
+  },
 
   gitignore: [".vscode"],
 
