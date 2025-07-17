@@ -31,6 +31,9 @@ jspm_packages/
 .yarn-integrity
 .cache
 .vscode
+/test-reports/
+junit.xml
+/coverage/
 !/.github/workflows/build.yml
 /dist/changelog.md
 /dist/version.txt

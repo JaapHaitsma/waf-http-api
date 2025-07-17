@@ -4,6 +4,35 @@
 
 ### WafHttpApi <a name="WafHttpApi" id="waf-http-api.WafHttpApi"></a>
 
+*Example*
+
+```typescript
+// Usage with custom WAF rules and domain
+const customRulesApi = new WafHttpApi(this, 'CustomRulesApi', {
+  httpApi: myHttpApi,
+  domain: 'secure-api.example.com',
+  wafRules: [
+    {
+      name: 'RateLimitRule',
+      priority: 10,
+      statement: {
+        rateBasedStatement: {
+          limit: 2000,
+          aggregateKeyType: 'IP',
+        },
+      },
+      action: { block: {} },
+      visibilityConfig: {
+        cloudWatchMetricsEnabled: true,
+        metricName: 'RateLimitRule',
+        sampledRequestsEnabled: true,
+      },
+    },
+  ],
+});
+```
+
+
 #### Initializers <a name="Initializers" id="waf-http-api.WafHttpApi.Initializer"></a>
 
 ```typescript
@@ -16,7 +45,7 @@ new WafHttpApi(scope: Construct, id: string, props: WafHttpApiProps)
 | --- | --- | --- |
 | <code><a href="#waf-http-api.WafHttpApi.Initializer.parameter.scope">scope</a></code> | <code>constructs.Construct</code> | The scope in which to define this construct (e.g., a CDK Stack). |
 | <code><a href="#waf-http-api.WafHttpApi.Initializer.parameter.id">id</a></code> | <code>string</code> | The unique identifier for this construct within its scope. |
-| <code><a href="#waf-http-api.WafHttpApi.Initializer.parameter.props">props</a></code> | <code><a href="#waf-http-api.WafHttpApiProps">WafHttpApiProps</a></code> | The properties required to configure this construct, including the target HTTP API and optional WAF rules. |
+| <code><a href="#waf-http-api.WafHttpApi.Initializer.parameter.props">props</a></code> | <code><a href="#waf-http-api.WafHttpApiProps">WafHttpApiProps</a></code> | The properties required to configure this construct, including the target HTTP API, optional WAF rules, custom domain, and SSL certificate. |
 
 ---
 
@@ -40,7 +69,19 @@ The unique identifier for this construct within its scope.
 
 - *Type:* <a href="#waf-http-api.WafHttpApiProps">WafHttpApiProps</a>
 
-The properties required to configure this construct, including the target HTTP API and optional WAF rules.
+The properties required to configure this construct, including the target HTTP API, optional WAF rules, custom domain, and SSL certificate.
+
+**Props Configuration:**
+- `httpApi` (required): The HTTP API Gateway to protect
+- `wafRules` (optional): Custom WAF rules, defaults to AWS managed rules
+- `domain` (optional): Custom domain name for the CloudFront distribution
+- `certificate` (optional): SSL certificate for the custom domain (must be in us-east-1)
+
+**Custom Domain Behavior:**
+- If `domain` is provided without `certificate`: ACM certificate is auto-generated
+- If both `domain` and `certificate` are provided: Uses the provided certificate
+- If `certificate` is provided without `domain`: Certificate is ignored with warning
+- If neither is provided: Uses default CloudFront domain only
 
 ---
 
@@ -91,8 +132,10 @@ Any object.
 | **Name** | **Type** | **Description** |
 | --- | --- | --- |
 | <code><a href="#waf-http-api.WafHttpApi.property.node">node</a></code> | <code>constructs.Node</code> | The tree node. |
-| <code><a href="#waf-http-api.WafHttpApi.property.distribution">distribution</a></code> | <code>aws-cdk-lib.aws_cloudfront.Distribution</code> | *No description.* |
-| <code><a href="#waf-http-api.WafHttpApi.property.secretHeaderValue">secretHeaderValue</a></code> | <code>string</code> | *No description.* |
+| <code><a href="#waf-http-api.WafHttpApi.property.distribution">distribution</a></code> | <code>aws-cdk-lib.aws_cloudfront.Distribution</code> | The CloudFront distribution created and managed by this construct. |
+| <code><a href="#waf-http-api.WafHttpApi.property.secretHeaderValue">secretHeaderValue</a></code> | <code>string</code> | The randomly generated secret value for the custom header. |
+| <code><a href="#waf-http-api.WafHttpApi.property.certificate">certificate</a></code> | <code>aws-cdk-lib.aws_certificatemanager.ICertificate</code> | The SSL certificate used for the custom domain. |
+| <code><a href="#waf-http-api.WafHttpApi.property.customDomain">customDomain</a></code> | <code>string</code> | The custom domain name configured for this distribution. |
 
 ---
 
@@ -116,6 +159,10 @@ public readonly distribution: Distribution;
 
 - *Type:* aws-cdk-lib.aws_cloudfront.Distribution
 
+The CloudFront distribution created and managed by this construct.
+
+You can use this property to retrieve the distribution's domain name or ARN.
+
 ---
 
 ##### `secretHeaderValue`<sup>Required</sup> <a name="secretHeaderValue" id="waf-http-api.WafHttpApi.property.secretHeaderValue"></a>
@@ -125,6 +172,43 @@ public readonly secretHeaderValue: string;
 ```
 
 - *Type:* string
+
+The randomly generated secret value for the custom header.
+
+This value is unique for each deployment of the construct.
+It should be used in your HTTP API's authorizer or backend logic
+to validate requests coming through CloudFront.
+
+---
+
+##### `certificate`<sup>Optional</sup> <a name="certificate" id="waf-http-api.WafHttpApi.property.certificate"></a>
+
+```typescript
+public readonly certificate: ICertificate;
+```
+
+- *Type:* aws-cdk-lib.aws_certificatemanager.ICertificate
+
+The SSL certificate used for the custom domain.
+
+This will be defined when either a certificate is provided via props
+or when a certificate is automatically generated for a custom domain.
+Undefined when no custom domain is configured.
+
+---
+
+##### `customDomain`<sup>Optional</sup> <a name="customDomain" id="waf-http-api.WafHttpApi.property.customDomain"></a>
+
+```typescript
+public readonly customDomain: string;
+```
+
+- *Type:* string
+
+The custom domain name configured for this distribution.
+
+This will be defined when a domain is provided via props.
+Undefined when no custom domain is configured.
 
 ---
 
@@ -163,6 +247,8 @@ const wafHttpApiProps: WafHttpApiProps = { ... }
 | **Name** | **Type** | **Description** |
 | --- | --- | --- |
 | <code><a href="#waf-http-api.WafHttpApiProps.property.httpApi">httpApi</a></code> | <code>aws-cdk-lib.aws_apigatewayv2.HttpApi</code> | The HTTP API to be protected by the WAF and CloudFront. |
+| <code><a href="#waf-http-api.WafHttpApiProps.property.certificate">certificate</a></code> | <code>aws-cdk-lib.aws_certificatemanager.ICertificate</code> | Optional: SSL certificate for the custom domain. |
+| <code><a href="#waf-http-api.WafHttpApiProps.property.domain">domain</a></code> | <code>string</code> | Optional: Custom domain name for the CloudFront distribution. |
 | <code><a href="#waf-http-api.WafHttpApiProps.property.wafRules">wafRules</a></code> | <code>aws-cdk-lib.aws_wafv2.CfnWebACL.RuleProperty[]</code> | Optional: Custom WAF rules to apply to the WebACL. |
 
 ---
@@ -178,6 +264,36 @@ public readonly httpApi: HttpApi;
 The HTTP API to be protected by the WAF and CloudFront.
 
 This should be an instance of `aws-cdk-lib/aws-apigatewayv2.HttpApi`.
+
+---
+
+##### `certificate`<sup>Optional</sup> <a name="certificate" id="waf-http-api.WafHttpApiProps.property.certificate"></a>
+
+```typescript
+public readonly certificate: ICertificate;
+```
+
+- *Type:* aws-cdk-lib.aws_certificatemanager.ICertificate
+
+Optional: SSL certificate for the custom domain.
+
+Must be an ACM certificate in the us-east-1 region for CloudFront compatibility.
+If not provided and a domain is specified, a certificate will be automatically generated.
+
+---
+
+##### `domain`<sup>Optional</sup> <a name="domain" id="waf-http-api.WafHttpApiProps.property.domain"></a>
+
+```typescript
+public readonly domain: string;
+```
+
+- *Type:* string
+
+Optional: Custom domain name for the CloudFront distribution.
+
+When provided, the CloudFront distribution will be configured to accept requests on this domain.
+If no certificate is provided, an ACM certificate will be automatically generated.
 
 ---
 

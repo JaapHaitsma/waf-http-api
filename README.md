@@ -6,6 +6,7 @@ A CDK construct that fronts an HTTP API with a CloudFront distribution and prote
 
 - **Enhanced Security:** Protects your HTTP API with AWS WAF rules
 - **Global CDN:** Fronts your API with CloudFront for improved performance and availability
+- **Custom Domains:** Support for custom domains with automatic SSL certificate management or you can bring your own certificate
 - **Origin Verification:** Adds a secret header to ensure requests come through CloudFront
 - **Customizable:** Use default WAF rules or provide your own custom rules
 - **Easy Integration:** Simple to add to existing AWS CDK stacks
@@ -25,6 +26,8 @@ pip install waf-http-api
 ``` -->
 
 ## Usage
+
+### Basic Usage
 
 This example shows how to protect an HTTP API with WAF and CloudFront:
 
@@ -74,6 +77,152 @@ class MyStack extends Stack {
   }
 }
 ```
+
+### Custom Domain with Automatic Certificate
+
+This example shows how to use a custom domain with automatic SSL certificate generation:
+
+```typescript
+import { Stack, StackProps, CfnOutput } from "aws-cdk-lib";
+import { HttpApi, HttpMethod } from "aws-cdk-lib/aws-apigatewayv2";
+import { HttpLambdaIntegration } from "aws-cdk-lib/aws-apigatewayv2-integrations";
+import { NodejsFunction } from "aws-cdk-lib/aws-lambda-nodejs";
+import { Runtime } from "aws-cdk-lib/aws-lambda";
+import { WafHttpApi } from "waf-http-api";
+
+class MyStack extends Stack {
+  constructor(scope: Construct, id: string, props?: StackProps) {
+    super(scope, id, props);
+
+    // ... Lambda and HTTP API setup (same as above) ...
+
+    const protectedApi = new WafHttpApi(this, "ProtectedMyApi", {
+      httpApi: httpApi,
+      domain: "api.example.com", // Custom domain
+      // Certificate will be automatically generated with DNS validation
+    });
+
+    new CfnOutput(this, "CustomDomainEndpoint", {
+      value: `https://${protectedApi.customDomain}`,
+      description: "Custom domain API endpoint",
+    });
+
+    new CfnOutput(this, "CertificateArn", {
+      value: protectedApi.certificate?.certificateArn || "No certificate",
+      description: "Auto-generated SSL certificate ARN",
+    });
+  }
+}
+```
+
+### Custom Domain with Provided Certificate
+
+This example shows how to use a custom domain with your own SSL certificate:
+
+```typescript
+import { Stack, StackProps, CfnOutput } from "aws-cdk-lib";
+import { Certificate } from "aws-cdk-lib/aws-certificatemanager";
+import { HttpApi, HttpMethod } from "aws-cdk-lib/aws-apigatewayv2";
+import { HttpLambdaIntegration } from "aws-cdk-lib/aws-apigatewayv2-integrations";
+import { NodejsFunction } from "aws-cdk-lib/aws-lambda-nodejs";
+import { Runtime } from "aws-cdk-lib/aws-lambda";
+import { WafHttpApi } from "waf-http-api";
+
+class MyStack extends Stack {
+  constructor(scope: Construct, id: string, props?: StackProps) {
+    super(scope, id, props);
+
+    // ... Lambda and HTTP API setup (same as above) ...
+
+    // Reference an existing certificate (must be in us-east-1 region)
+    const existingCertificate = Certificate.fromCertificateArn(
+      this,
+      "ExistingCert",
+      "arn:aws:acm:us-east-1:123456789012:certificate/12345678-1234-1234-1234-123456789012",
+    );
+
+    const protectedApi = new WafHttpApi(this, "ProtectedMyApi", {
+      httpApi: httpApi,
+      domain: "api.example.com",
+      certificate: existingCertificate, // Use provided certificate
+    });
+
+    new CfnOutput(this, "CustomDomainEndpoint", {
+      value: `https://${protectedApi.customDomain}`,
+      description: "Custom domain API endpoint",
+    });
+
+    new CfnOutput(this, "CertificateArn", {
+      value: protectedApi.certificate?.certificateArn || "No certificate",
+      description: "Provided SSL certificate ARN",
+    });
+  }
+}
+```
+
+### Advanced Configuration with Custom WAF Rules
+
+This example shows advanced usage with custom domain and custom WAF rules:
+
+```typescript
+import { Stack, StackProps, CfnOutput } from "aws-cdk-lib";
+import { HttpApi, HttpMethod } from "aws-cdk-lib/aws-apigatewayv2";
+import { HttpLambdaIntegration } from "aws-cdk-lib/aws-apigatewayv2-integrations";
+import { NodejsFunction } from "aws-cdk-lib/aws-lambda-nodejs";
+import { Runtime } from "aws-cdk-lib/aws-lambda";
+import { WafHttpApi } from "waf-http-api";
+
+class MyStack extends Stack {
+  constructor(scope: Construct, id: string, props?: StackProps) {
+    super(scope, id, props);
+
+    // ... Lambda and HTTP API setup (same as above) ...
+
+    const protectedApi = new WafHttpApi(this, "ProtectedMyApi", {
+      httpApi: httpApi,
+      domain: "secure-api.example.com",
+      wafRules: [
+        {
+          name: "RateLimitRule",
+          priority: 10,
+          statement: {
+            rateBasedStatement: {
+              limit: 2000,
+              aggregateKeyType: "IP",
+            },
+          },
+          action: { block: {} },
+          visibilityConfig: {
+            cloudWatchMetricsEnabled: true,
+            metricName: "RateLimitRule",
+            sampledRequestsEnabled: true,
+          },
+        },
+        // Add more custom rules as needed
+      ],
+    });
+
+    new CfnOutput(this, "SecureApiEndpoint", {
+      value: `https://${protectedApi.customDomain}`,
+      description: "Secure API endpoint with custom WAF rules",
+    });
+  }
+}
+```
+
+## Important Notes
+
+### Certificate Requirements
+
+- **Region Requirement**: SSL certificates for CloudFront must be in the `us-east-1` region
+- **DNS Validation**: Auto-generated certificates use DNS validation, requiring you to add DNS records
+- **Domain Ownership**: You must own and control the domain for certificate validation
+
+### Domain Configuration
+
+- **Supported Formats**: Apex domains (`example.com`), subdomains (`api.example.com`), and wildcards (`*.example.com`)
+- **DNS Setup**: You'll need to configure your domain's DNS to point to the CloudFront distribution
+- **Validation**: Domain format is validated at synthesis time to prevent common errors
 
 ## API
 
