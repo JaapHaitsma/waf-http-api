@@ -21,11 +21,9 @@ export interface WafHttpApiProps {
    *
    * @type {HttpApi}
    * @example
-   * ```typescript
    * const httpApi = new HttpApi(this, 'MyApi', {
    *   description: 'My protected HTTP API'
    * });
-   * ```
    */
   readonly httpApi: HttpApi;
 
@@ -38,7 +36,6 @@ export interface WafHttpApiProps {
    * @type {wafv2.CfnWebACL.RuleProperty[]}
    * @default AWS Managed Rules (AmazonIpReputationList, CommonRuleSet)
    * @example
-   * ```typescript
    * wafRules: [
    *   {
    *     name: 'RateLimitRule',
@@ -57,7 +54,6 @@ export interface WafHttpApiProps {
    *     },
    *   },
    * ]
-   * ```
    */
   readonly wafRules?: wafv2.CfnWebACL.RuleProperty[];
 
@@ -73,7 +69,6 @@ export interface WafHttpApiProps {
    *
    * @type {string}
    * @example
-   * ```typescript
    * // Apex domain
    * domain: 'example.com'
    *
@@ -82,7 +77,6 @@ export interface WafHttpApiProps {
    *
    * // Wildcard domain
    * domain: '*.api.example.com'
-   * ```
    */
   readonly domain?: string;
 
@@ -99,7 +93,6 @@ export interface WafHttpApiProps {
    *
    * @type {acm.ICertificate}
    * @example
-   * ```typescript
    * // Using existing certificate
    * const existingCert = Certificate.fromCertificateArn(
    *   this,
@@ -109,7 +102,6 @@ export interface WafHttpApiProps {
    *
    * // In props
    * certificate: existingCert
-   * ```
    */
   readonly certificate?: acm.ICertificate;
 }
@@ -201,7 +193,6 @@ export class WafHttpApi extends Construct {
    * @readonly
    * @type {cloudfront.Distribution}
    * @example
-   * ```typescript
    * // Access the CloudFront distribution domain name
    * const distributionDomain = wafHttpApi.distribution.distributionDomainName;
    *
@@ -213,7 +204,6 @@ export class WafHttpApi extends Construct {
    *   value: `https://${wafHttpApi.distribution.distributionDomainName}`,
    *   description: 'CloudFront distribution endpoint'
    * });
-   * ```
    */
   public readonly distribution: cloudfront.Distribution;
 
@@ -226,7 +216,6 @@ export class WafHttpApi extends Construct {
    * @readonly
    * @type {string}
    * @example
-   * ```typescript
    * // Use in Lambda authorizer
    * export const handler = async (event: APIGatewayProxyEvent) => {
    *   const secretHeader = event.headers[WafHttpApi.SECRET_HEADER_NAME];
@@ -245,7 +234,6 @@ export class WafHttpApi extends Construct {
    *     CLOUDFRONT_SECRET: wafHttpApi.secretHeaderValue
    *   }
    * });
-   * ```
    */
   public readonly secretHeaderValue: string;
 
@@ -260,7 +248,6 @@ export class WafHttpApi extends Construct {
    * @readonly
    * @type {acm.ICertificate | undefined}
    * @example
-   * ```typescript
    * // Check if certificate is available
    * if (wafHttpApi.certificate) {
    *   // Output certificate ARN
@@ -280,7 +267,6 @@ export class WafHttpApi extends Construct {
    *     // ... other listener props
    *   });
    * }
-   * ```
    */
   public readonly certificate?: acm.ICertificate;
 
@@ -292,7 +278,6 @@ export class WafHttpApi extends Construct {
    * @readonly
    * @type {string | undefined}
    * @example
-   * ```typescript
    * // Check if custom domain is configured
    * if (wafHttpApi.customDomain) {
    *   // Output custom domain endpoint
@@ -316,7 +301,6 @@ export class WafHttpApi extends Construct {
    *     description: 'Default CloudFront endpoint'
    *   });
    * }
-   * ```
    */
   public readonly customDomain?: string;
 
@@ -546,52 +530,47 @@ export class WafHttpApi extends Construct {
     // 2. Create the CloudFront distribution
     // This distribution acts as the public-facing endpoint for the HTTP API,
     // providing CDN benefits like caching and reduced latency, and integrating with WAF.
-    this.distribution = new cloudfront.Distribution(
-      this,
-      "ApiDistribution",
-      {
-        comment: `CloudFront distribution for HTTP API: ${props.httpApi.httpApiId}`, // Descriptive comment for the distribution.
-        // Associate the created WAF WebACL with this CloudFront distribution.
-        webAclId: webAcl.attrArn,
-        // Add domain aliases when a custom domain is provided
-        domainNames: props.domain ? [props.domain] : undefined,
-        // Configure viewer certificate when a certificate is available
-        certificate: this.certificate,
-        // Enforce a minimum TLS security policy for connections between viewers and CloudFront.
-        minimumProtocolVersion: cloudfront.SecurityPolicyProtocol.TLS_V1_2_2021,
-        // Define the default behavior for requests hitting this distribution.
-        defaultBehavior: {
-          // Configure the origin (backend server) for the distribution.
-          // `Fn.select(2, Fn.split("/", props.httpApi.url!))` extracts the domain name
-          // from the HTTP API's URL (e.g., "abcdef.execute-api.us-east-1.amazonaws.com").
-          origin: new origins.HttpOrigin(
-            Fn.select(2, Fn.split("/", props.httpApi.url!)),
-            {
-              // Enforce HTTPS-only communication between CloudFront and the origin.
-              protocolPolicy: cloudfront.OriginProtocolPolicy.HTTPS_ONLY,
-              // Add the custom secret header to every request CloudFront forwards to the origin.
-              // This is crucial for origin verification.
-              customHeaders: {
-                [WafHttpApi.SECRET_HEADER_NAME]: this.secretHeaderValue,
-              },
+    this.distribution = new cloudfront.Distribution(this, "ApiDistribution", {
+      comment: `CloudFront distribution for HTTP API: ${props.httpApi.httpApiId}`, // Descriptive comment for the distribution.
+      // Associate the created WAF WebACL with this CloudFront distribution.
+      webAclId: webAcl.attrArn,
+      // Add domain aliases when a custom domain is provided
+      domainNames: props.domain ? [props.domain] : undefined,
+      // Configure viewer certificate when a certificate is available
+      certificate: this.certificate,
+      // Enforce a minimum TLS security policy for connections between viewers and CloudFront.
+      minimumProtocolVersion: cloudfront.SecurityPolicyProtocol.TLS_V1_2_2021,
+      // Define the default behavior for requests hitting this distribution.
+      defaultBehavior: {
+        // Configure the origin (backend server) for the distribution.
+        // `Fn.select(2, Fn.split("/", props.httpApi.url!))` extracts the domain name
+        // from the HTTP API's URL (e.g., "abcdef.execute-api.us-east-1.amazonaws.com").
+        origin: new origins.HttpOrigin(
+          Fn.select(2, Fn.split("/", props.httpApi.url!)),
+          {
+            // Enforce HTTPS-only communication between CloudFront and the origin.
+            protocolPolicy: cloudfront.OriginProtocolPolicy.HTTPS_ONLY,
+            // Add the custom secret header to every request CloudFront forwards to the origin.
+            // This is crucial for origin verification.
+            customHeaders: {
+              [WafHttpApi.SECRET_HEADER_NAME]: this.secretHeaderValue,
             },
-          ),
-          // Redirect all HTTP viewer requests to HTTPS to ensure secure communication.
-          viewerProtocolPolicy:
-            cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
-          // Allow all HTTP methods (GET, POST, PUT, DELETE, etc.) to be forwarded to the origin.
-          allowedMethods: cloudfront.AllowedMethods.ALLOW_ALL,
-          // Disable caching for API requests by default, as API responses are typically dynamic
-          // and should not be cached by the CDN.
-          cachePolicy: cloudfront.CachePolicy.CACHING_DISABLED,
-          // Forward all viewer headers, query strings, and cookies to the origin,
-          // EXCEPT for the 'Host' header. The 'Host' header needs to be the API Gateway's
-          // host to ensure correct routing within API Gateway.
-          originRequestPolicy:
-            cloudfront.OriginRequestPolicy.ALL_VIEWER_EXCEPT_HOST_HEADER,
-        },
+          },
+        ),
+        // Redirect all HTTP viewer requests to HTTPS to ensure secure communication.
+        viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
+        // Allow all HTTP methods (GET, POST, PUT, DELETE, etc.) to be forwarded to the origin.
+        allowedMethods: cloudfront.AllowedMethods.ALLOW_ALL,
+        // Disable caching for API requests by default, as API responses are typically dynamic
+        // and should not be cached by the CDN.
+        cachePolicy: cloudfront.CachePolicy.CACHING_DISABLED,
+        // Forward all viewer headers, query strings, and cookies to the origin,
+        // EXCEPT for the 'Host' header. The 'Host' header needs to be the API Gateway's
+        // host to ensure correct routing within API Gateway.
+        originRequestPolicy:
+          cloudfront.OriginRequestPolicy.ALL_VIEWER_EXCEPT_HOST_HEADER,
       },
-    );
+    });
   }
 
   /**

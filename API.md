@@ -165,6 +165,23 @@ You can use this property to retrieve the distribution's domain name or ARN.
 
 ---
 
+*Example*
+
+```typescript
+// Access the CloudFront distribution domain name
+const distributionDomain = wafHttpApi.distribution.distributionDomainName;
+
+// Access the distribution ARN
+const distributionArn = wafHttpApi.distribution.distributionArn;
+
+// Use in CloudFormation outputs
+new CfnOutput(this, 'DistributionEndpoint', {
+  value: `https://${wafHttpApi.distribution.distributionDomainName}`,
+  description: 'CloudFront distribution endpoint'
+});
+```
+
+
 ##### `secretHeaderValue`<sup>Required</sup> <a name="secretHeaderValue" id="waf-http-api.WafHttpApi.property.secretHeaderValue"></a>
 
 ```typescript
@@ -175,11 +192,35 @@ public readonly secretHeaderValue: string;
 
 The randomly generated secret value for the custom header.
 
-This value is unique for each deployment of the construct.
-It should be used in your HTTP API's authorizer or backend logic
-to validate requests coming through CloudFront.
+This value is unique for each deployment of the construct and should be used
+in your HTTP API's authorizer or backend logic to validate that requests
+are coming through CloudFront and not directly from the internet.
 
 ---
+
+*Example*
+
+```typescript
+// Use in Lambda authorizer
+export const handler = async (event: APIGatewayProxyEvent) => {
+  const secretHeader = event.headers[WafHttpApi.SECRET_HEADER_NAME];
+  const expectedSecret = process.env.CLOUDFRONT_SECRET; // Set from wafHttpApi.secretHeaderValue
+
+  if (secretHeader !== expectedSecret) {
+    throw new Error('Unauthorized: Request not from CloudFront');
+  }
+
+  // Continue with request processing...
+};
+
+// Set as environment variable in Lambda
+const lambda = new NodejsFunction(this, 'ApiHandler', {
+  environment: {
+    CLOUDFRONT_SECRET: wafHttpApi.secretHeaderValue
+  }
+});
+```
+
 
 ##### `certificate`<sup>Optional</sup> <a name="certificate" id="waf-http-api.WafHttpApi.property.certificate"></a>
 
@@ -191,11 +232,38 @@ public readonly certificate: ICertificate;
 
 The SSL certificate used for the custom domain.
 
-This will be defined when either a certificate is provided via props
-or when a certificate is automatically generated for a custom domain.
-Undefined when no custom domain is configured.
+This property will be defined in the following scenarios:
+- When a certificate is provided via the `certificate` prop
+- When a certificate is automatically generated for a custom domain
+
+The property will be `undefined` when no custom domain is configured.
 
 ---
+
+*Example*
+
+```typescript
+// Check if certificate is available
+if (wafHttpApi.certificate) {
+  // Output certificate ARN
+  new CfnOutput(this, 'CertificateArn', {
+    value: wafHttpApi.certificate.certificateArn,
+    description: 'SSL certificate ARN'
+  });
+
+  // Use certificate in other resources
+  const loadBalancer = new ApplicationLoadBalancer(this, 'ALB', {
+    // ... other props
+  });
+
+  loadBalancer.addListener('HttpsListener', {
+    port: 443,
+    certificates: [wafHttpApi.certificate],
+    // ... other listener props
+  });
+}
+```
+
 
 ##### `customDomain`<sup>Optional</sup> <a name="customDomain" id="waf-http-api.WafHttpApi.property.customDomain"></a>
 
@@ -207,10 +275,39 @@ public readonly customDomain: string;
 
 The custom domain name configured for this distribution.
 
-This will be defined when a domain is provided via props.
-Undefined when no custom domain is configured.
+This property will be defined when a domain is provided via the `domain` prop.
+It will be `undefined` when no custom domain is configured.
 
 ---
+
+*Example*
+
+```typescript
+// Check if custom domain is configured
+if (wafHttpApi.customDomain) {
+  // Output custom domain endpoint
+  new CfnOutput(this, 'CustomDomainEndpoint', {
+    value: `https://${wafHttpApi.customDomain}`,
+    description: 'Custom domain API endpoint'
+  });
+
+  // Use domain in Route53 record
+  new ARecord(this, 'ApiRecord', {
+    zone: hostedZone,
+    recordName: wafHttpApi.customDomain,
+    target: RecordTarget.fromAlias(
+      new CloudFrontTarget(wafHttpApi.distribution)
+    ),
+  });
+} else {
+  // Use CloudFront default domain
+  new CfnOutput(this, 'DefaultEndpoint', {
+    value: `https://${wafHttpApi.distribution.distributionDomainName}`,
+    description: 'Default CloudFront endpoint'
+  });
+}
+```
+
 
 #### Constants <a name="Constants" id="Constants"></a>
 
@@ -264,8 +361,18 @@ public readonly httpApi: HttpApi;
 The HTTP API to be protected by the WAF and CloudFront.
 
 This should be an instance of `aws-cdk-lib/aws-apigatewayv2.HttpApi`.
+The API will be fronted by a CloudFront distribution with WAF protection.
 
 ---
+
+*Example*
+
+```typescript
+const httpApi = new HttpApi(this, 'MyApi', {
+  description: 'My protected HTTP API'
+});
+```
+
 
 ##### `certificate`<sup>Optional</sup> <a name="certificate" id="waf-http-api.WafHttpApiProps.property.certificate"></a>
 
@@ -278,9 +385,30 @@ public readonly certificate: ICertificate;
 Optional: SSL certificate for the custom domain.
 
 Must be an ACM certificate in the us-east-1 region for CloudFront compatibility.
-If not provided and a domain is specified, a certificate will be automatically generated.
+If not provided and a domain is specified, a certificate will be automatically generated
+using DNS validation.
+
+**Important Requirements:**
+- Certificate must be in us-east-1 region (CloudFront requirement)
+- Certificate must cover the specified domain (exact match or wildcard)
+- Certificate must be valid and accessible
 
 ---
+
+*Example*
+
+```typescript
+// Using existing certificate
+const existingCert = Certificate.fromCertificateArn(
+  this,
+  'ExistingCert',
+  'arn:aws:acm:us-east-1:123456789012:certificate/12345678-1234-1234-1234-123456789012'
+);
+
+// In props
+certificate: existingCert
+```
+
 
 ##### `domain`<sup>Optional</sup> <a name="domain" id="waf-http-api.WafHttpApiProps.property.domain"></a>
 
@@ -293,9 +421,28 @@ public readonly domain: string;
 Optional: Custom domain name for the CloudFront distribution.
 
 When provided, the CloudFront distribution will be configured to accept requests on this domain.
-If no certificate is provided, an ACM certificate will be automatically generated.
+If no certificate is provided, an ACM certificate will be automatically generated with DNS validation.
+
+Supports various domain formats:
+- Apex domains: `example.com`
+- Subdomains: `api.example.com`, `www.api.example.com`
+- Wildcard domains: `*.example.com`
 
 ---
+
+*Example*
+
+```typescript
+// Apex domain
+domain: 'example.com'
+
+// Subdomain
+domain: 'api.example.com'
+
+// Wildcard domain
+domain: '*.api.example.com'
+```
+
 
 ##### `wafRules`<sup>Optional</sup> <a name="wafRules" id="waf-http-api.WafHttpApiProps.property.wafRules"></a>
 
@@ -313,6 +460,30 @@ specifically "AWSManagedRulesAmazonIpReputationList" and "AWSManagedRulesCommonR
 These rules help protect against common web exploits and unwanted traffic.
 
 ---
+
+*Example*
+
+```typescript
+wafRules: [
+  {
+    name: 'RateLimitRule',
+    priority: 10,
+    statement: {
+      rateBasedStatement: {
+        limit: 2000,
+        aggregateKeyType: 'IP',
+      },
+    },
+    action: { block: {} },
+    visibilityConfig: {
+      cloudWatchMetricsEnabled: true,
+      metricName: 'RateLimitRule',
+      sampledRequestsEnabled: true,
+    },
+  },
+]
+```
+
 
 
 

@@ -131,8 +131,8 @@
     "outdir": "dist",
     "targets": {
       "python": {
-        "distName": "merapar.waf-http-api",
-        "module": "merapar_waf_http_api"
+        "distName": "waf-http-api",
+        "module": "waf_http_api"
       }
     },
     "tsc": {

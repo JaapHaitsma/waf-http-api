@@ -9,11 +9,18 @@ describe("CloudFront Domain Configuration", () => {
   let app: App;
   let stack: Stack;
   let httpApi: HttpApi;
+  let consoleSpy: jest.SpyInstance;
 
   beforeEach(() => {
     app = new App();
     stack = new Stack(app, "TestStack");
     httpApi = new HttpApi(stack, "TestApi");
+    // Suppress console warnings for cleaner test output (warnings are tested separately)
+    consoleSpy = jest.spyOn(console, "warn").mockImplementation();
+  });
+
+  afterEach(() => {
+    consoleSpy.mockRestore();
   });
 
   test("CloudFront distribution without custom domain", () => {
