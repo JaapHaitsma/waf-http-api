@@ -528,7 +528,7 @@ export class WafHttpApi extends Construct {
 
     // 1. Create the AWS WAF WebACL (Web Access Control List)
     // This WebACL will be associated with the CloudFront distribution to filter web traffic.
-    const webAcl = new wafv2.CfnWebACL(this, id + "WebAcl", {
+    const webAcl = new wafv2.CfnWebACL(this, "WebAcl", {
       // Default action for requests that don't match any rules. 'allow' means they pass through.
       defaultAction: { allow: {} },
       // The scope MUST be 'CLOUDFRONT' for a WebACL to be associated with a CloudFront distribution.
@@ -548,7 +548,7 @@ export class WafHttpApi extends Construct {
     // providing CDN benefits like caching and reduced latency, and integrating with WAF.
     this.distribution = new cloudfront.Distribution(
       this,
-      id + "ApiDistribution",
+      "ApiDistribution",
       {
         comment: `CloudFront distribution for HTTP API: ${props.httpApi.httpApiId}`, // Descriptive comment for the distribution.
         // Associate the created WAF WebACL with this CloudFront distribution.
