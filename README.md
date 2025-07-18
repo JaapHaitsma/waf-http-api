@@ -45,7 +45,6 @@ class MyStack extends Stack {
     super(scope, id, props);
 
     const myLambda = new NodejsFunction(this, "MyApiHandler", {
-      runtime: Runtime.NODEJS_18_X,
       handler: "handler",
       entry: "lambda/handler.ts",
     });
