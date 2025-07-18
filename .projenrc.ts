@@ -41,4 +41,24 @@ const project = new awscdk.AwsCdkConstructLibrary({
   },
 });
 
+// Add Husky and lint-staged as dev dependencies
+project.addDevDeps("husky", "lint-staged");
+
+// Add lint-staged configuration to package.json
+project.package.addField("lint-staged", {
+  "*.{js,ts,json,md}": ["prettier --write", "eslint --fix"],
+});
+
+// Add husky install to prepare script
+project.package.addField("scripts", {
+  prepare: "husky install",
+});
+
+// Create the pre-commit hook for husky
+import { TextFile } from "projen";
+new TextFile(project, ".husky/pre-commit", {
+  executable: true,
+  lines: ["#!/bin/sh", '. "$(dirname "$0")/_/husky.sh"', "npx lint-staged"],
+});
+
 project.synth();
