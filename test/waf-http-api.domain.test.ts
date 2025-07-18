@@ -2,18 +2,28 @@ import { App, Stack } from "aws-cdk-lib";
 import { Template } from "aws-cdk-lib/assertions";
 import { HttpApi } from "aws-cdk-lib/aws-apigatewayv2";
 import * as acm from "aws-cdk-lib/aws-certificatemanager";
+import * as route53 from "aws-cdk-lib/aws-route53";
 import { WafHttpApi } from "../src/index";
 
 describe("WafHttpApi - Domain Configuration", () => {
   let app: App;
   let stack: Stack;
   let httpApi: HttpApi;
+  let hostedZone: route53.IHostedZone;
   let consoleSpy: jest.SpyInstance;
 
   beforeEach(() => {
     app = new App();
     stack = new Stack(app, "TestStack");
     httpApi = new HttpApi(stack, "TestApi");
+    hostedZone = route53.HostedZone.fromHostedZoneAttributes(
+      stack,
+      "TestZone",
+      {
+        hostedZoneId: "Z1234567890ABC",
+        zoneName: "example.com",
+      },
+    );
     // Suppress console warnings for cleaner test output (warnings are tested separately)
     consoleSpy = jest.spyOn(console, "warn").mockImplementation();
   });
@@ -50,6 +60,7 @@ describe("WafHttpApi - Domain Configuration", () => {
     const wafApi = new WafHttpApi(stack, "TestWafApi", {
       httpApi,
       domain: "api.example.com",
+      hostedZone,
     });
 
     const template = Template.fromStack(stack);
@@ -83,6 +94,7 @@ describe("WafHttpApi - Domain Configuration", () => {
     const wafApi = new WafHttpApi(stack, "TestWafApi", {
       httpApi,
       domain: "api.example.com",
+      hostedZone,
       certificate,
     });
 
@@ -141,6 +153,7 @@ describe("WafHttpApi - Domain Configuration", () => {
     const wafApi = new WafHttpApi(stack, "TestWafApi", {
       httpApi,
       domain: "api.example.com",
+      hostedZone,
     });
 
     expect(wafApi.customDomain).toBe("api.example.com");

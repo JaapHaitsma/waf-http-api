@@ -279,19 +279,13 @@ describe("WafHttpApi - Hosted Zone Functionality", () => {
     );
   });
 
-  test("DNS record properties are undefined when no hosted zone provided", () => {
-    const wafApi = new WafHttpApi(stack, "TestWafApi", {
-      httpApi,
-      domain: "api.example.com", // Domain without hosted zone
-    });
-
-    // DNS records should not be created without hosted zone
-    expect(wafApi.aRecord).toBeUndefined();
-    expect(wafApi.aaaaRecord).toBeUndefined();
-
-    // Other properties should still be set
-    expect(wafApi.customDomain).toBe("api.example.com");
-    expect(wafApi.certificate).toBeDefined();
+  test("should throw error when domain is provided without hosted zone", () => {
+    expect(() => {
+      new WafHttpApi(stack, "TestWafApi", {
+        httpApi,
+        domain: "api.example.com", // Domain without hosted zone
+      });
+    }).toThrow(/Hosted zone required.*Domain.*specified without hosted zone/);
   });
 
   test("wildcard domain with hosted zone", () => {

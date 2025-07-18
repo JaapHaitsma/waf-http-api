@@ -1,18 +1,28 @@
 import { App, Stack } from "aws-cdk-lib";
 import { HttpApi } from "aws-cdk-lib/aws-apigatewayv2";
 import * as acm from "aws-cdk-lib/aws-certificatemanager";
+import * as route53 from "aws-cdk-lib/aws-route53";
 import { WafHttpApi } from "../src/index";
 
 describe("WafHttpApi - Certificate Handling", () => {
   let app: App;
   let stack: Stack;
   let httpApi: HttpApi;
+  let hostedZone: route53.IHostedZone;
   let consoleSpy: jest.SpyInstance;
 
   beforeEach(() => {
     app = new App();
     stack = new Stack(app, "TestStack");
     httpApi = new HttpApi(stack, "TestApi");
+    hostedZone = route53.HostedZone.fromHostedZoneAttributes(
+      stack,
+      "TestZone",
+      {
+        hostedZoneId: "Z1234567890ABC",
+        zoneName: "example.com",
+      },
+    );
     consoleSpy = jest.spyOn(console, "warn").mockImplementation();
   });
 
@@ -20,11 +30,68 @@ describe("WafHttpApi - Certificate Handling", () => {
     consoleSpy.mockRestore();
   });
 
+  describe("Hosted Zone Requirement", () => {
+    test("should throw error when domain is provided without hosted zone", () => {
+      expect(() => {
+        new WafHttpApi(stack, "TestWafApi", {
+          httpApi,
+          domain: "api.example.com",
+          // No hosted zone provided
+        });
+      }).toThrow(/Hosted zone required.*Domain.*specified without hosted zone/);
+    });
+
+    test("should throw error when domain and certificate are provided without hosted zone", () => {
+      const certificate = acm.Certificate.fromCertificateArn(
+        stack,
+        "TestCert",
+        "arn:aws:acm:us-east-1:123456789012:certificate/12345678-1234-1234-1234-123456789012",
+      );
+
+      expect(() => {
+        new WafHttpApi(stack, "TestWafApi", {
+          httpApi,
+          domain: "api.example.com",
+          certificate,
+          // No hosted zone provided
+        });
+      }).toThrow(/Hosted zone required.*Domain.*specified without hosted zone/);
+    });
+
+    test("should work correctly when domain and hosted zone are provided", () => {
+      expect(() => {
+        new WafHttpApi(stack, "TestWafApi", {
+          httpApi,
+          domain: "api.example.com",
+          hostedZone,
+        });
+      }).not.toThrow();
+    });
+
+    test("should work correctly when domain, certificate, and hosted zone are provided", () => {
+      const certificate = acm.Certificate.fromCertificateArn(
+        stack,
+        "TestCert",
+        "arn:aws:acm:us-east-1:123456789012:certificate/12345678-1234-1234-1234-123456789012",
+      );
+
+      expect(() => {
+        new WafHttpApi(stack, "TestWafApi", {
+          httpApi,
+          domain: "api.example.com",
+          hostedZone,
+          certificate,
+        });
+      }).not.toThrow();
+    });
+  });
+
   describe("Certificate Property Exposure", () => {
     test("should expose certificate property when auto-generated", () => {
       const wafApi = new WafHttpApi(stack, "TestWafApi", {
         httpApi,
         domain: "api.example.com",
+        hostedZone,
       });
 
       expect(wafApi.certificate).toBeDefined();
@@ -41,6 +108,7 @@ describe("WafHttpApi - Certificate Handling", () => {
       const wafApi = new WafHttpApi(stack, "TestWafApi", {
         httpApi,
         domain: "api.example.com",
+        hostedZone,
         certificate,
       });
 
@@ -60,6 +128,7 @@ describe("WafHttpApi - Certificate Handling", () => {
         new WafHttpApi(stack, "TestWafApi", {
           httpApi,
           domain: "api.example.com",
+          hostedZone,
           certificate,
         });
       }).toThrow(/Certificate region validation failed/);
@@ -76,6 +145,7 @@ describe("WafHttpApi - Certificate Handling", () => {
         new WafHttpApi(stack, "TestWafApi", {
           httpApi,
           domain: "api.example.com",
+          hostedZone,
           certificate,
         });
       }).toThrow(/Certificate validation failed/);
@@ -94,6 +164,7 @@ describe("WafHttpApi - Certificate Handling", () => {
         new WafHttpApi(stack, "TestWafApi", {
           httpApi,
           domain: "api.example.com",
+          hostedZone,
           certificate,
         });
       }).not.toThrow();
@@ -110,6 +181,7 @@ describe("WafHttpApi - Certificate Handling", () => {
         new WafHttpApi(stack, "TestWafApi", {
           httpApi,
           domain: "api.example.com",
+          hostedZone,
           certificate,
         });
       }).toThrow(/Invalid certificate ARN format/);
@@ -129,6 +201,14 @@ describe("WafHttpApi - Certificate Handling", () => {
           new WafHttpApi(stack, `TestWafApi${region}`, {
             httpApi: new HttpApi(stack, `TestApi${region}`),
             domain: "api.example.com",
+            hostedZone: route53.HostedZone.fromHostedZoneAttributes(
+              stack,
+              `TestZone${region}`,
+              {
+                hostedZoneId: `Z123456789${region}ABC`,
+                zoneName: "example.com",
+              },
+            ),
             certificate,
           });
         }).toThrow(/Certificate must be in us-east-1 region/);
@@ -154,6 +234,14 @@ describe("WafHttpApi - Certificate Handling", () => {
           new WafHttpApi(stack, `TestWafApi${index}`, {
             httpApi: new HttpApi(stack, `TestApi${index}`),
             domain: "api.example.com",
+            hostedZone: route53.HostedZone.fromHostedZoneAttributes(
+              stack,
+              `TestZone${index}`,
+              {
+                hostedZoneId: `Z123456789${index}ABC`,
+                zoneName: "example.com",
+              },
+            ),
             certificate,
           });
         }).toThrow();
@@ -172,6 +260,7 @@ describe("WafHttpApi - Certificate Handling", () => {
         new WafHttpApi(stack, "TestWafApi", {
           httpApi,
           domain: "api.example.com",
+          hostedZone,
         });
       }).not.toThrow();
 
@@ -186,6 +275,14 @@ describe("WafHttpApi - Certificate Handling", () => {
         new WafHttpApi(stack, "TestWafApi2", {
           httpApi: new HttpApi(stack, "TestApi2"),
           domain: "api.example.com",
+          hostedZone: route53.HostedZone.fromHostedZoneAttributes(
+            stack,
+            "TestZone2",
+            {
+              hostedZoneId: "Z1234567890DEF",
+              zoneName: "example.com",
+            },
+          ),
           certificate,
         });
       }).toThrow(/Certificate validation failed in WafHttpApi construct/);
@@ -229,6 +326,7 @@ describe("WafHttpApi - Certificate Handling", () => {
       new WafHttpApi(stack, "TestWafApi", {
         httpApi,
         domain: "api.example.com",
+        hostedZone,
         certificate,
       });
 
@@ -256,6 +354,7 @@ describe("WafHttpApi - Certificate Handling", () => {
       new WafHttpApi(stack, "TestWafApi", {
         httpApi,
         domain: "*.api.example.com",
+        hostedZone,
         certificate,
       });
 

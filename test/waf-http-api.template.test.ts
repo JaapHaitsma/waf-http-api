@@ -8,11 +8,20 @@ describe("WafHttpApi - CloudFormation Template Structure", () => {
   let app: App;
   let stack: Stack;
   let httpApi: HttpApi;
+  let hostedZone: route53.IHostedZone;
 
   beforeEach(() => {
     app = new App();
     stack = new Stack(app, "TestStack");
     httpApi = new HttpApi(stack, "TestApi");
+    hostedZone = route53.HostedZone.fromHostedZoneAttributes(
+      stack,
+      "TestZone",
+      {
+        hostedZoneId: "Z1234567890ABC",
+        zoneName: "example.com",
+      },
+    );
   });
 
   test("should generate valid CloudFormation template without custom domain", () => {
@@ -35,6 +44,7 @@ describe("WafHttpApi - CloudFormation Template Structure", () => {
     new WafHttpApi(stack, "TestWafApi", {
       httpApi,
       domain: "api.example.com",
+      hostedZone,
     });
 
     const template = Template.fromStack(stack);
@@ -46,20 +56,11 @@ describe("WafHttpApi - CloudFormation Template Structure", () => {
     // Verify domain-related resources are created
     template.resourceCountIs("AWS::CertificateManager::Certificate", 1);
 
-    // Verify no Route 53 records without hosted zone
-    template.resourceCountIs("AWS::Route53::RecordSet", 0);
+    // Verify Route 53 records are created with hosted zone
+    template.resourceCountIs("AWS::Route53::RecordSet", 2); // A and AAAA records
   });
 
   test("should generate valid CloudFormation template with hosted zone", () => {
-    const hostedZone = route53.HostedZone.fromHostedZoneAttributes(
-      stack,
-      "TestZone",
-      {
-        hostedZoneId: "Z1234567890ABC",
-        zoneName: "example.com",
-      },
-    );
-
     new WafHttpApi(stack, "TestWafApi", {
       httpApi,
       domain: "api.example.com",
@@ -79,6 +80,7 @@ describe("WafHttpApi - CloudFormation Template Structure", () => {
     new WafHttpApi(stack, "TestWafApi", {
       httpApi,
       domain: "api.example.com",
+      hostedZone,
     });
 
     const template = Template.fromStack(stack);
@@ -103,6 +105,7 @@ describe("WafHttpApi - CloudFormation Template Structure", () => {
     new WafHttpApi(stack, "TestWafApi", {
       httpApi,
       domain: "api.example.com",
+      hostedZone,
     });
 
     const template = Template.fromStack(stack);
