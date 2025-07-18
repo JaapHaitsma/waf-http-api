@@ -278,43 +278,6 @@ class MyStack extends Stack {
 }
 ```
 
-## Breaking Changes
-
-### Version 2.x - Hosted Zone Required for Custom Domains
-
-**⚠️ Breaking Change:** Starting from version 2.x, a hosted zone is required when using custom domains.
-
-**Before (v1.x):**
-
-```typescript
-// This worked in v1.x but will fail in v2.x
-const protectedApi = new WafHttpApi(this, "MyApi", {
-  httpApi: httpApi,
-  domain: "api.example.com", // No hosted zone required
-});
-```
-
-**After (v2.x):**
-
-```typescript
-// v2.x requires hosted zone for custom domains
-const hostedZone = HostedZone.fromLookup(this, "MyZone", {
-  domainName: "example.com",
-});
-
-const protectedApi = new WafHttpApi(this, "MyApi", {
-  httpApi: httpApi,
-  domain: "api.example.com",
-  hostedZone: hostedZone, // Now required
-});
-```
-
-**Migration Guide:**
-
-1. Add a hosted zone reference to your stack
-2. Ensure your domain matches or is a subdomain of the hosted zone
-3. Update your WafHttpApi configuration to include the `hostedZone` property
-
 ## Important Notes
 
 ### Certificate Requirements
