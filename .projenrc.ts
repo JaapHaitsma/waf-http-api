@@ -18,7 +18,7 @@ const project = new awscdk.AwsCdkConstructLibrary({
   authorAddress: "jaap@haitsma.org",
   copyrightOwner: "Merapar Technologies Group B.V.",
   license: "MIT",
-  cdkVersion: "2.200.0",
+  cdkVersion: "2.200.2",
   defaultReleaseBranch: "main",
   jsiiVersion: "~5.8.0",
   jest: true,
