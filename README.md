@@ -7,6 +7,7 @@ A CDK construct that fronts an HTTP API with a CloudFront distribution and prote
 - **Enhanced Security:** Protects your HTTP API with AWS WAF rules
 - **Global CDN:** Fronts your API with CloudFront for improved performance and availability
 - **Custom Domains:** Support for custom domains with automatic SSL certificate management or you can bring your own certificate
+- **Automatic DNS Records:** Automatically creates Route 53 A and AAAA records when hosted zone is provided
 - **Origin Verification:** Adds a secret header to ensure requests come through CloudFront
 - **Customizable:** Use default WAF rules or provide your own custom rules
 - **Easy Integration:** Simple to add to existing AWS CDK stacks
@@ -21,9 +22,9 @@ npm install waf-http-api
 
 ### Python
 
-<!-- ```bash
+```bash
 pip install waf-http-api
-``` -->
+```
 
 ## Usage
 
@@ -111,6 +112,59 @@ class MyStack extends Stack {
       value: protectedApi.certificate?.certificateArn || "No certificate",
       description: "Auto-generated SSL certificate ARN",
     });
+  }
+}
+```
+
+### Custom Domain with Automatic DNS Records
+
+This example shows how to use a custom domain with automatic Route 53 DNS record creation:
+
+```typescript
+import { Stack, StackProps, CfnOutput } from "aws-cdk-lib";
+import { HttpApi, HttpMethod } from "aws-cdk-lib/aws-apigatewayv2";
+import { HttpLambdaIntegration } from "aws-cdk-lib/aws-apigatewayv2-integrations";
+import { NodejsFunction } from "aws-cdk-lib/aws-lambda-nodejs";
+import { Runtime } from "aws-cdk-lib/aws-lambda";
+import { HostedZone } from "aws-cdk-lib/aws-route53";
+import { WafHttpApi } from "waf-http-api";
+
+class MyStack extends Stack {
+  constructor(scope: Construct, id: string, props?: StackProps) {
+    super(scope, id, props);
+
+    // ... Lambda and HTTP API setup (same as above) ...
+
+    // Reference an existing hosted zone
+    const hostedZone = HostedZone.fromLookup(this, "MyZone", {
+      domainName: "example.com",
+    });
+
+    const protectedApi = new WafHttpApi(this, "ProtectedMyApi", {
+      httpApi: httpApi,
+      domain: "api.example.com",
+      hostedZone: hostedZone, // Automatically creates A and AAAA records
+    });
+
+    new CfnOutput(this, "CustomDomainEndpoint", {
+      value: `https://${protectedApi.customDomain}`,
+      description: "Custom domain API endpoint",
+    });
+
+    // Access the automatically created DNS records
+    if (protectedApi.aRecord) {
+      new CfnOutput(this, "ARecordName", {
+        value: protectedApi.aRecord.domainName,
+        description: "A record for the API domain",
+      });
+    }
+
+    if (protectedApi.aaaaRecord) {
+      new CfnOutput(this, "AAAARecordName", {
+        value: protectedApi.aaaaRecord.domainName,
+        description: "AAAA record for the API domain",
+      });
+    }
   }
 }
 ```
@@ -223,6 +277,13 @@ class MyStack extends Stack {
 - **Supported Formats**: Apex domains (`example.com`), subdomains (`api.example.com`), and wildcards (`*.example.com`)
 - **DNS Setup**: You'll need to configure your domain's DNS to point to the CloudFront distribution
 - **Validation**: Domain format is validated at synthesis time to prevent common errors
+
+### Hosted Zone and DNS Records
+
+- **Automatic DNS Records**: When both `domain` and `hostedZone` are provided, Route 53 A and AAAA records are automatically created
+- **Domain Compatibility**: The domain must match or be a subdomain of the hosted zone's domain
+- **Record Types**: Both IPv4 (A) and IPv6 (AAAA) records are created pointing to the CloudFront distribution
+- **Optional Feature**: DNS records are only created when a hosted zone is provided; the construct works without it
 
 ## API
 

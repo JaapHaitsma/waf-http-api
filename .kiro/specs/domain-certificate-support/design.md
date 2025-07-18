@@ -40,6 +40,7 @@ export interface WafHttpApiProps {
   // New properties
   readonly domain?: string;
   readonly certificate?: acm.ICertificate;
+  readonly hostedZone?: route53.IHostedZone;
 }
 ```
 
@@ -57,6 +58,8 @@ export class WafHttpApi extends Construct {
   // New properties
   public readonly certificate?: acm.ICertificate;
   public readonly customDomain?: string;
+  public readonly aRecord?: route53.ARecord;
+  public readonly aaaaRecord?: route53.AaaaRecord;
 }
 ```
 
@@ -65,6 +68,13 @@ export class WafHttpApi extends Construct {
 1. **User-Provided Certificate**: When both domain and certificate are provided, use the certificate directly
 2. **Auto-Generated Certificate**: When only domain is provided, create a new ACM certificate
 3. **No Custom Domain**: When no domain is provided, no certificate operations occur
+
+### DNS Record Management Strategy
+
+1. **Hosted Zone with Domain**: When both hostedZone and domain are provided, automatically create Route 53 A and AAAA records
+2. **Hosted Zone without Domain**: When hostedZone is provided without domain, ignore with warning
+3. **Domain without Hosted Zone**: When domain is provided without hostedZone, no DNS records are created
+4. **Domain Validation**: When hostedZone is provided, validate that domain matches or is subdomain of hosted zone
 
 ## Data Models
 
@@ -79,6 +89,12 @@ export class WafHttpApi extends Construct {
 - Verify certificate exists and is valid
 - Ensure certificate region is us-east-1 (CloudFront requirement)
 - Validate that certificate covers the specified domain
+
+### Hosted Zone Validation
+
+- Verify hosted zone exists and is accessible
+- Validate that domain matches or is a subdomain of the hosted zone's domain
+- Support for both apex domains and subdomains within the hosted zone
 
 ## Error Handling
 
@@ -101,7 +117,17 @@ export class WafHttpApi extends Construct {
    - Thrown when certificate doesn't match domain
 
 4. **Certificate Without Domain**
+
    - Warning: "Certificate provided without domain, ignoring certificate"
+   - Logged but doesn't throw error
+
+5. **Hosted Zone Domain Mismatch**
+
+   - Error: "Domain does not match or is not a subdomain of the hosted zone"
+   - Thrown when domain doesn't belong to the provided hosted zone
+
+6. **Hosted Zone Without Domain**
+   - Warning: "Hosted zone provided without domain, ignoring hosted zone"
    - Logged but doesn't throw error
 
 ### Runtime Considerations

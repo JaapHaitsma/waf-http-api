@@ -4,6 +4,8 @@ import { HttpApi } from "aws-cdk-lib/aws-apigatewayv2";
 import * as acm from "aws-cdk-lib/aws-certificatemanager";
 import * as cloudfront from "aws-cdk-lib/aws-cloudfront";
 import * as origins from "aws-cdk-lib/aws-cloudfront-origins";
+import * as route53 from "aws-cdk-lib/aws-route53";
+import * as route53Targets from "aws-cdk-lib/aws-route53-targets";
 import * as wafv2 from "aws-cdk-lib/aws-wafv2";
 import { Construct } from "constructs";
 
@@ -104,6 +106,40 @@ export interface WafHttpApiProps {
    * certificate: existingCert
    */
   readonly certificate?: acm.ICertificate;
+
+  /**
+   * Optional: Route 53 hosted zone for automatic DNS record creation.
+   * When provided along with a domain, the construct will automatically create
+   * Route 53 A and AAAA records pointing to the CloudFront distribution.
+   *
+   * **Behavior:**
+   * - When both `hostedZone` and `domain` are provided: DNS records are automatically created
+   * - When `hostedZone` is provided without `domain`: Hosted zone is ignored with warning
+   * - When `domain` is provided without `hostedZone`: No DNS records are created
+   * - Domain must match or be a subdomain of the hosted zone's domain
+   *
+   * @type {route53.IHostedZone}
+   * @example
+   * // Using existing hosted zone
+   * const hostedZone = HostedZone.fromLookup(this, 'MyZone', {
+   *   domainName: 'example.com'
+   * });
+   *
+   * // In props with automatic DNS record creation
+   * const protectedApi = new WafHttpApi(this, 'MyApi', {
+   *   httpApi: myHttpApi,
+   *   domain: 'api.example.com',
+   *   hostedZone: hostedZone
+   * });
+   *
+   * // Access created DNS records
+   * if (protectedApi.aRecord) {
+   *   new CfnOutput(this, 'ARecordName', {
+   *     value: protectedApi.aRecord.domainName
+   *   });
+   * }
+   */
+  readonly hostedZone?: route53.IHostedZone;
 }
 
 /**
@@ -173,6 +209,33 @@ export interface WafHttpApiProps {
  *     },
  *   ],
  * });
+ *
+ * @example
+ * // Usage with hosted zone for automatic DNS record creation
+ * const hostedZone = HostedZone.fromLookup(this, 'MyZone', {
+ *   domainName: 'example.com'
+ * });
+ *
+ * const apiWithDns = new WafHttpApi(this, 'ApiWithDNS', {
+ *   httpApi: myHttpApi,
+ *   domain: 'api.example.com',
+ *   hostedZone: hostedZone
+ * });
+ *
+ * // Access the automatically created DNS records
+ * if (apiWithDns.aRecord) {
+ *   new CfnOutput(this, 'ARecordName', {
+ *     value: apiWithDns.aRecord.domainName,
+ *     description: 'A record for the API domain'
+ *   });
+ * }
+ *
+ * if (apiWithDns.aaaaRecord) {
+ *   new CfnOutput(this, 'AAAARecordName', {
+ *     value: apiWithDns.aaaaRecord.domainName,
+ *     description: 'AAAA record for the API domain'
+ *   });
+ * }
  */
 export class WafHttpApi extends Construct {
   /**
@@ -303,6 +366,64 @@ export class WafHttpApi extends Construct {
    * }
    */
   public readonly customDomain?: string;
+
+  /**
+   * The Route 53 A record created for the custom domain.
+   * This property will be defined when both `hostedZone` and `domain` are provided,
+   * and the construct automatically creates DNS records pointing to the CloudFront distribution.
+   *
+   * The A record maps the custom domain to the CloudFront distribution's IPv4 addresses.
+   *
+   * @readonly
+   * @type {route53.ARecord | undefined}
+   * @example
+   * // Check if A record was created
+   * if (wafHttpApi.aRecord) {
+   *   // Output A record details
+   *   new CfnOutput(this, 'ARecordName', {
+   *     value: wafHttpApi.aRecord.domainName,
+   *     description: 'A record domain name'
+   *   });
+   *
+   *   // Reference the record in other resources
+   *   const recordArn = wafHttpApi.aRecord.recordArn;
+   * }
+   *
+   * // The A record will be undefined if:
+   * // - No hostedZone was provided
+   * // - No domain was provided
+   * // - hostedZone was provided without domain (ignored with warning)
+   */
+  public readonly aRecord?: route53.ARecord;
+
+  /**
+   * The Route 53 AAAA record created for the custom domain.
+   * This property will be defined when both `hostedZone` and `domain` are provided,
+   * and the construct automatically creates DNS records pointing to the CloudFront distribution.
+   *
+   * The AAAA record maps the custom domain to the CloudFront distribution's IPv6 addresses.
+   *
+   * @readonly
+   * @type {route53.AaaaRecord | undefined}
+   * @example
+   * // Check if AAAA record was created
+   * if (wafHttpApi.aaaaRecord) {
+   *   // Output AAAA record details
+   *   new CfnOutput(this, 'AAAARecordName', {
+   *     value: wafHttpApi.aaaaRecord.domainName,
+   *     description: 'AAAA record domain name'
+   *   });
+   *
+   *   // Reference the record in other resources
+   *   const recordArn = wafHttpApi.aaaaRecord.recordArn;
+   * }
+   *
+   * // The AAAA record will be undefined if:
+   * // - No hostedZone was provided
+   * // - No domain was provided
+   * // - hostedZone was provided without domain (ignored with warning)
+   */
+  public readonly aaaaRecord?: route53.AaaaRecord;
 
   /**
    * @constructor
@@ -501,6 +622,42 @@ export class WafHttpApi extends Construct {
       this.certificate = undefined;
     }
 
+    // Handle hosted zone validation and DNS record setup
+    if (props.hostedZone) {
+      if (props.domain) {
+        try {
+          // Validate that the domain matches or is a subdomain of the hosted zone
+          this.validateHostedZoneDomainCompatibility(
+            props.hostedZone,
+            props.domain,
+          );
+        } catch (error) {
+          // Re-throw hosted zone validation errors with enhanced context
+          if (error instanceof Error) {
+            throw new Error(
+              `Hosted zone validation failed in WafHttpApi construct '${id}': ${error.message}\n` +
+                "🔧 Troubleshooting steps:\n" +
+                "   1. Verify your hosted zone exists and is accessible\n" +
+                "   2. Ensure the domain belongs to the hosted zone\n" +
+                "   3. Check that you have the necessary permissions to access the hosted zone\n" +
+                "   4. Confirm the hosted zone domain name is correctly configured",
+            );
+          }
+          throw error;
+        }
+      } else {
+        // Hosted zone provided without domain - log warning and ignore hosted zone
+        console.warn(
+          "⚠️  WafHttpApi Warning: Hosted zone provided without domain - hosted zone will be ignored.\n" +
+            "   📋 Issue: A Route 53 hosted zone was provided but no domain was specified.\n" +
+            "   🔧 Solution: Choose one of the following options:\n" +
+            "      • Add a 'domain' property to your WafHttpApiProps to use the hosted zone\n" +
+            "      • Remove the 'hostedZone' property if you don't need automatic DNS records\n" +
+            "   💡 Example: { httpApi, domain: 'api.example.com', hostedZone: yourHostedZone }",
+        );
+      }
+    }
+
     // Generate a cryptographically strong random hex string for the secret header value.
     // This ensures that the secret is unique and difficult to guess, enhancing security
     // when used for origin verification.
@@ -571,6 +728,66 @@ export class WafHttpApi extends Construct {
           cloudfront.OriginRequestPolicy.ALL_VIEWER_EXCEPT_HOST_HEADER,
       },
     });
+
+    // 3. Create DNS records if both hosted zone and domain are provided
+    if (props.hostedZone && props.domain) {
+      try {
+        // Create A record (IPv4) pointing to the CloudFront distribution
+        this.aRecord = new route53.ARecord(this, "DomainARecord", {
+          zone: props.hostedZone,
+          recordName: props.domain,
+          target: route53.RecordTarget.fromAlias(
+            new route53Targets.CloudFrontTarget(this.distribution),
+          ),
+          comment: `A record for ${props.domain} pointing to CloudFront distribution`,
+        });
+
+        // Create AAAA record (IPv6) pointing to the CloudFront distribution
+        this.aaaaRecord = new route53.AaaaRecord(this, "DomainAAAARecord", {
+          zone: props.hostedZone,
+          recordName: props.domain,
+          target: route53.RecordTarget.fromAlias(
+            new route53Targets.CloudFrontTarget(this.distribution),
+          ),
+          comment: `AAAA record for ${props.domain} pointing to CloudFront distribution`,
+        });
+      } catch (error) {
+        // Handle DNS record creation failures with descriptive error messages
+        if (error instanceof Error) {
+          throw new Error(
+            `Failed to create DNS records for domain '${props.domain}' in WafHttpApi construct '${id}': ${error.message}\n` +
+              `📍 Hosted Zone: ${props.hostedZone.zoneName}\n` +
+              `📍 Domain: ${props.domain}\n` +
+              `📍 CloudFront Distribution: ${this.distribution.distributionDomainName}\n` +
+              "🔧 Troubleshooting steps:\n" +
+              "   1. Verify your hosted zone exists and is accessible\n" +
+              "   2. Ensure you have permissions to create Route 53 records (route53:ChangeResourceRecordSets)\n" +
+              "   3. Check that the domain doesn't already have conflicting A or AAAA records\n" +
+              "   4. Verify the hosted zone covers the specified domain (domain must match or be subdomain)\n" +
+              "   5. Confirm your AWS account limits for Route 53 records haven't been exceeded\n" +
+              "   6. Check if the hosted zone is in the same AWS account and accessible\n" +
+              "   7. Verify that the CloudFront distribution has been fully created before DNS record creation\n" +
+              "💡 Common causes and solutions:\n" +
+              "   • Conflicting records: Delete existing A/AAAA records for the domain in Route 53\n" +
+              "   • Permission issues: Ensure your IAM role has route53:ChangeResourceRecordSets permission\n" +
+              "   • Cross-account access: Verify hosted zone delegation if using cross-account setup\n" +
+              "   • Domain mismatch: Ensure domain belongs to the hosted zone\n" +
+              "🔧 Alternative: Create DNS records manually in Route 53 console\n" +
+              `   • A record: ${props.domain} -> ${this.distribution.distributionDomainName}\n` +
+              `   • AAAA record: ${props.domain} -> ${this.distribution.distributionDomainName}\n` +
+              "📋 Required IAM permissions:\n" +
+              "   • route53:ChangeResourceRecordSets\n" +
+              "   • route53:GetHostedZone\n" +
+              "   • route53:ListResourceRecordSets",
+          );
+        }
+        throw error;
+      }
+    } else {
+      // No hosted zone or domain provided - ensure DNS record properties are undefined
+      this.aRecord = undefined;
+      this.aaaaRecord = undefined;
+    }
   }
 
   /**
@@ -795,6 +1012,109 @@ export class WafHttpApi extends Construct {
         "      • Exact match: certificate for 'api.example.com' covers 'api.example.com'\n" +
         "      • Wildcard match: certificate for '*.example.com' covers 'api.example.com'\n" +
         "      • Multiple domains: certificate can cover multiple specific domains",
+    );
+  }
+
+  /**
+   * @private
+   * @method validateHostedZoneDomainCompatibility
+   * @description Validates that the provided domain matches or is a subdomain of the hosted zone's domain.
+   * This ensures that DNS records can be properly created in the hosted zone.
+   * @param {route53.IHostedZone} hostedZone The hosted zone to validate against
+   * @param {string} domain The domain that should belong to the hosted zone
+   * @throws {Error} Throws an error if domain doesn't match or isn't a subdomain of the hosted zone
+   */
+  private validateHostedZoneDomainCompatibility(
+    hostedZone: route53.IHostedZone,
+    domain: string,
+  ): void {
+    // Basic validation: ensure both hosted zone and domain are provided
+    if (!hostedZone || !domain) {
+      throw new Error(
+        "❌ Hosted zone domain compatibility validation failed: Both hosted zone and domain must be provided.\n" +
+          "📋 Issue: Missing required parameters for validation.\n" +
+          "🔧 Solution: Ensure both hostedZone and domain are properly configured in your WafHttpApiProps.\n" +
+          "💡 Example: { httpApi, domain: 'api.example.com', hostedZone: yourHostedZone }",
+      );
+    }
+
+    // Get the hosted zone's domain name
+    const hostedZoneName = hostedZone.zoneName;
+
+    if (!hostedZoneName) {
+      throw new Error(
+        "❌ Hosted zone domain compatibility validation failed: Hosted zone name is not available.\n" +
+          `📝 Domain to validate: ${domain}\n` +
+          "📋 Issue: Cannot verify domain compatibility without hosted zone details.\n" +
+          "🔧 Troubleshooting steps:\n" +
+          "   1. Verify the hosted zone exists and is accessible\n" +
+          "   2. Check your IAM permissions for Route 53 hosted zone access\n" +
+          "   3. Ensure the hosted zone is properly imported or referenced\n" +
+          "   4. If using HostedZone.fromLookup(), verify the domain name parameter\n" +
+          "💡 Example: HostedZone.fromLookup(this, 'Zone', { domainName: 'example.com' })",
+      );
+    }
+
+    // Normalize domain names by removing trailing dots and converting to lowercase
+    const normalizedHostedZone = hostedZoneName
+      .toLowerCase()
+      .replace(/\.$/, "");
+    const normalizedDomain = domain.toLowerCase().replace(/\.$/, "");
+
+    // Check if domain matches exactly (apex domain case)
+    if (normalizedDomain === normalizedHostedZone) {
+      return; // Valid: exact match
+    }
+
+    // Check if domain is a subdomain of the hosted zone
+    if (normalizedDomain.endsWith("." + normalizedHostedZone)) {
+      return; // Valid: subdomain
+    }
+
+    // Handle wildcard domains
+    if (normalizedDomain.startsWith("*.")) {
+      const wildcardBase = normalizedDomain.substring(2); // Remove "*."
+
+      // Check if wildcard base matches hosted zone exactly
+      if (wildcardBase === normalizedHostedZone) {
+        return; // Valid: *.example.com with hosted zone example.com
+      }
+
+      // Check if wildcard base is a subdomain of hosted zone
+      if (wildcardBase.endsWith("." + normalizedHostedZone)) {
+        return; // Valid: *.api.example.com with hosted zone example.com
+      }
+    }
+
+    // If we reach here, the domain doesn't match the hosted zone
+    throw new Error(
+      `❌ Hosted zone domain compatibility validation failed: Domain "${domain}" does not match or is not a subdomain of hosted zone "${hostedZoneName}".\n` +
+        `📍 Provided Domain: ${domain}\n` +
+        `📍 Hosted Zone: ${hostedZoneName}\n` +
+        "📋 Domain validation rules:\n" +
+        "   • Apex domain: 'example.com' matches hosted zone 'example.com'\n" +
+        "   • Subdomain: 'api.example.com' matches hosted zone 'example.com'\n" +
+        "   • Wildcard: '*.example.com' matches hosted zone 'example.com'\n" +
+        "   • Wildcard subdomain: '*.api.example.com' matches hosted zone 'example.com'\n" +
+        "🔧 Solutions:\n" +
+        "   1. Use a domain that belongs to your hosted zone:\n" +
+        `      • For hosted zone '${hostedZoneName}': use '${hostedZoneName}' or 'subdomain.${hostedZoneName}'\n` +
+        "   2. Create a hosted zone for your domain:\n" +
+        `      • Create a hosted zone for '${domain}' or its parent domain\n` +
+        "   3. Use a different hosted zone that covers your domain\n" +
+        "   4. Verify hosted zone configuration:\n" +
+        "      • Check Route 53 console to confirm hosted zone exists\n" +
+        "      • Ensure hosted zone name is correctly configured\n" +
+        "      • Verify you have access to the hosted zone\n" +
+        "💡 Examples of valid combinations:\n" +
+        `   • Domain: '${hostedZoneName}', Hosted Zone: '${hostedZoneName}' ✅\n` +
+        `   • Domain: 'api.${hostedZoneName}', Hosted Zone: '${hostedZoneName}' ✅\n` +
+        `   • Domain: '*.${hostedZoneName}', Hosted Zone: '${hostedZoneName}' ✅\n` +
+        "🔍 Troubleshooting steps:\n" +
+        "   • Double-check domain spelling and format\n" +
+        "   • Verify hosted zone domain name in Route 53 console\n" +
+        "   • Ensure no trailing dots in domain or hosted zone name\n" +
+        "   • Check if you're using the correct hosted zone for your domain",
     );
   }
 

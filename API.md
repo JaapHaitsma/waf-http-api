@@ -7,29 +7,31 @@
 *Example*
 
 ```typescript
-// Usage with custom WAF rules and domain
-const customRulesApi = new WafHttpApi(this, 'CustomRulesApi', {
-  httpApi: myHttpApi,
-  domain: 'secure-api.example.com',
-  wafRules: [
-    {
-      name: 'RateLimitRule',
-      priority: 10,
-      statement: {
-        rateBasedStatement: {
-          limit: 2000,
-          aggregateKeyType: 'IP',
-        },
-      },
-      action: { block: {} },
-      visibilityConfig: {
-        cloudWatchMetricsEnabled: true,
-        metricName: 'RateLimitRule',
-        sampledRequestsEnabled: true,
-      },
-    },
-  ],
+// Usage with hosted zone for automatic DNS record creation
+const hostedZone = HostedZone.fromLookup(this, 'MyZone', {
+  domainName: 'example.com'
 });
+
+const apiWithDns = new WafHttpApi(this, 'ApiWithDNS', {
+  httpApi: myHttpApi,
+  domain: 'api.example.com',
+  hostedZone: hostedZone
+});
+
+// Access the automatically created DNS records
+if (apiWithDns.aRecord) {
+  new CfnOutput(this, 'ARecordName', {
+    value: apiWithDns.aRecord.domainName,
+    description: 'A record for the API domain'
+  });
+}
+
+if (apiWithDns.aaaaRecord) {
+  new CfnOutput(this, 'AAAARecordName', {
+    value: apiWithDns.aaaaRecord.domainName,
+    description: 'AAAA record for the API domain'
+  });
+}
 ```
 
 
@@ -134,6 +136,8 @@ Any object.
 | <code><a href="#waf-http-api.WafHttpApi.property.node">node</a></code> | <code>constructs.Node</code> | The tree node. |
 | <code><a href="#waf-http-api.WafHttpApi.property.distribution">distribution</a></code> | <code>aws-cdk-lib.aws_cloudfront.Distribution</code> | The CloudFront distribution created and managed by this construct. |
 | <code><a href="#waf-http-api.WafHttpApi.property.secretHeaderValue">secretHeaderValue</a></code> | <code>string</code> | The randomly generated secret value for the custom header. |
+| <code><a href="#waf-http-api.WafHttpApi.property.aaaaRecord">aaaaRecord</a></code> | <code>aws-cdk-lib.aws_route53.AaaaRecord</code> | The Route 53 AAAA record created for the custom domain. |
+| <code><a href="#waf-http-api.WafHttpApi.property.aRecord">aRecord</a></code> | <code>aws-cdk-lib.aws_route53.ARecord</code> | The Route 53 A record created for the custom domain. |
 | <code><a href="#waf-http-api.WafHttpApi.property.certificate">certificate</a></code> | <code>aws-cdk-lib.aws_certificatemanager.ICertificate</code> | The SSL certificate used for the custom domain. |
 | <code><a href="#waf-http-api.WafHttpApi.property.customDomain">customDomain</a></code> | <code>string</code> | The custom domain name configured for this distribution. |
 
@@ -219,6 +223,84 @@ const lambda = new NodejsFunction(this, 'ApiHandler', {
     CLOUDFRONT_SECRET: wafHttpApi.secretHeaderValue
   }
 });
+```
+
+
+##### `aaaaRecord`<sup>Optional</sup> <a name="aaaaRecord" id="waf-http-api.WafHttpApi.property.aaaaRecord"></a>
+
+```typescript
+public readonly aaaaRecord: AaaaRecord;
+```
+
+- *Type:* aws-cdk-lib.aws_route53.AaaaRecord
+
+The Route 53 AAAA record created for the custom domain.
+
+This property will be defined when both `hostedZone` and `domain` are provided,
+and the construct automatically creates DNS records pointing to the CloudFront distribution.
+
+The AAAA record maps the custom domain to the CloudFront distribution's IPv6 addresses.
+
+---
+
+*Example*
+
+```typescript
+// Check if AAAA record was created
+if (wafHttpApi.aaaaRecord) {
+  // Output AAAA record details
+  new CfnOutput(this, 'AAAARecordName', {
+    value: wafHttpApi.aaaaRecord.domainName,
+    description: 'AAAA record domain name'
+  });
+
+  // Reference the record in other resources
+  const recordArn = wafHttpApi.aaaaRecord.recordArn;
+}
+
+// The AAAA record will be undefined if:
+// - No hostedZone was provided
+// - No domain was provided
+// - hostedZone was provided without domain (ignored with warning)
+```
+
+
+##### `aRecord`<sup>Optional</sup> <a name="aRecord" id="waf-http-api.WafHttpApi.property.aRecord"></a>
+
+```typescript
+public readonly aRecord: ARecord;
+```
+
+- *Type:* aws-cdk-lib.aws_route53.ARecord
+
+The Route 53 A record created for the custom domain.
+
+This property will be defined when both `hostedZone` and `domain` are provided,
+and the construct automatically creates DNS records pointing to the CloudFront distribution.
+
+The A record maps the custom domain to the CloudFront distribution's IPv4 addresses.
+
+---
+
+*Example*
+
+```typescript
+// Check if A record was created
+if (wafHttpApi.aRecord) {
+  // Output A record details
+  new CfnOutput(this, 'ARecordName', {
+    value: wafHttpApi.aRecord.domainName,
+    description: 'A record domain name'
+  });
+
+  // Reference the record in other resources
+  const recordArn = wafHttpApi.aRecord.recordArn;
+}
+
+// The A record will be undefined if:
+// - No hostedZone was provided
+// - No domain was provided
+// - hostedZone was provided without domain (ignored with warning)
 ```
 
 
@@ -346,6 +428,7 @@ const wafHttpApiProps: WafHttpApiProps = { ... }
 | <code><a href="#waf-http-api.WafHttpApiProps.property.httpApi">httpApi</a></code> | <code>aws-cdk-lib.aws_apigatewayv2.HttpApi</code> | The HTTP API to be protected by the WAF and CloudFront. |
 | <code><a href="#waf-http-api.WafHttpApiProps.property.certificate">certificate</a></code> | <code>aws-cdk-lib.aws_certificatemanager.ICertificate</code> | Optional: SSL certificate for the custom domain. |
 | <code><a href="#waf-http-api.WafHttpApiProps.property.domain">domain</a></code> | <code>string</code> | Optional: Custom domain name for the CloudFront distribution. |
+| <code><a href="#waf-http-api.WafHttpApiProps.property.hostedZone">hostedZone</a></code> | <code>aws-cdk-lib.aws_route53.IHostedZone</code> | Optional: Route 53 hosted zone for automatic DNS record creation. |
 | <code><a href="#waf-http-api.WafHttpApiProps.property.wafRules">wafRules</a></code> | <code>aws-cdk-lib.aws_wafv2.CfnWebACL.RuleProperty[]</code> | Optional: Custom WAF rules to apply to the WebACL. |
 
 ---
@@ -441,6 +524,51 @@ domain: 'api.example.com'
 
 // Wildcard domain
 domain: '*.api.example.com'
+```
+
+
+##### `hostedZone`<sup>Optional</sup> <a name="hostedZone" id="waf-http-api.WafHttpApiProps.property.hostedZone"></a>
+
+```typescript
+public readonly hostedZone: IHostedZone;
+```
+
+- *Type:* aws-cdk-lib.aws_route53.IHostedZone
+
+Optional: Route 53 hosted zone for automatic DNS record creation.
+
+When provided along with a domain, the construct will automatically create
+Route 53 A and AAAA records pointing to the CloudFront distribution.
+
+**Behavior:**
+- When both `hostedZone` and `domain` are provided: DNS records are automatically created
+- When `hostedZone` is provided without `domain`: Hosted zone is ignored with warning
+- When `domain` is provided without `hostedZone`: No DNS records are created
+- Domain must match or be a subdomain of the hosted zone's domain
+
+---
+
+*Example*
+
+```typescript
+// Using existing hosted zone
+const hostedZone = HostedZone.fromLookup(this, 'MyZone', {
+  domainName: 'example.com'
+});
+
+// In props with automatic DNS record creation
+const protectedApi = new WafHttpApi(this, 'MyApi', {
+  httpApi: myHttpApi,
+  domain: 'api.example.com',
+  hostedZone: hostedZone
+});
+
+// Access created DNS records
+if (protectedApi.aRecord) {
+  new CfnOutput(this, 'ARecordName', {
+    value: protectedApi.aRecord.domainName
+  });
+}
 ```
 
 

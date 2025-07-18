@@ -49,10 +49,32 @@ This feature enhances the WafHttpApi construct to support custom domains and SSL
 
 ### Requirement 5
 
-**User Story:** As a developer using WafHttpApi, I want clear error handling when invalid domain or certificate configurations are provided, so that I can quickly identify and fix configuration issues.
+**User Story:** As a developer using WafHttpApi, I want to provide a hosted zone so that DNS records are automatically created for my custom domain, so that I don't have to manually configure Route 53 records.
+
+#### Acceptance Criteria
+
+1. WHEN a hostedZone property is provided along with a domain THEN the system SHALL automatically create Route 53 A and AAAA records pointing to the CloudFront distribution
+2. WHEN a hostedZone is provided without a domain THEN the system SHALL ignore the hostedZone property with a warning
+3. WHEN a domain is provided without a hostedZone THEN the system SHALL work normally but not create DNS records
+4. WHEN a hostedZone is provided THEN the domain SHALL be validated to ensure it matches or is a subdomain of the hosted zone's domain
+
+### Requirement 6
+
+**User Story:** As a developer using WafHttpApi, I want access to the created DNS records, so that I can reference them in other parts of my infrastructure or output their details.
+
+#### Acceptance Criteria
+
+1. WHEN DNS records are automatically created THEN the construct SHALL expose the A record as a public readonly property
+2. WHEN DNS records are automatically created THEN the construct SHALL expose the AAAA record as a public readonly property
+3. WHEN no hosted zone is provided THEN the DNS record properties SHALL be undefined
+
+### Requirement 7
+
+**User Story:** As a developer using WafHttpApi, I want clear error handling when invalid hosted zone configurations are provided, so that I can quickly identify and fix configuration issues.
 
 #### Acceptance Criteria
 
 1. WHEN an invalid domain format is provided THEN the system SHALL throw a descriptive error during synthesis
 2. WHEN a certificate is provided that doesn't match the domain THEN the system SHALL throw a descriptive error during synthesis
 3. WHEN certificate generation fails THEN the system SHALL provide clear error messages indicating the cause
+4. WHEN a hosted zone is provided that doesn't match the domain THEN the system SHALL throw a descriptive error during synthesis
