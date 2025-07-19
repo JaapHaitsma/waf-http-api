@@ -110,8 +110,33 @@
   - _Requirements: All hosted zone requirements validation_
 
 - [x] 15. Update documentation for hosted zone support
+
   - Add JSDoc comments for hostedZone property and DNS record properties
   - Update constructor documentation with hosted zone parameter
   - Add usage examples showing hosted zone configuration
   - Update class-level documentation to mention automatic DNS record creation
   - _Requirements: Documentation for 5.1, 6.1, 6.2_
+
+- [x] 16. Implement hosted zone requirement for custom domains
+
+  - Move hosted zone validation to the beginning of constructor before domain validation
+  - Add validation to require hosted zone when domain is provided
+  - Throw descriptive error when domain is provided without hosted zone
+  - Remove duplicate hosted zone validation from certificate sections
+  - _Requirements: 5.1, 5.2_
+
+- [x] 17. Update all unit tests for hosted zone requirement
+
+  - Update all existing domain tests to include hosted zone parameter
+  - Add new tests specifically for hosted zone requirement validation
+  - Update validation tests to expect hosted zone requirement errors first
+  - Add paired tests for domain format validation with hosted zone provided
+  - Fix certificate tests to include hosted zone when testing with domains
+  - _Requirements: All requirements validation with breaking change_
+
+- [x] 18. Update documentation and examples for breaking change
+  - Update README.md to reflect hosted zone requirement
+  - Update all usage examples to include hosted zone
+  - Add migration guide for existing users
+  - Update error messages to be clear and actionable
+  - _Requirements: Documentation for breaking change_
