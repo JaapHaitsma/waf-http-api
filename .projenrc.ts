@@ -1,4 +1,4 @@
-// NOTE use [skip release] in commit messages to skip release
+// NOTE use [skip ci] in commit messages to skip release
 import { awscdk } from "projen";
 const project = new awscdk.AwsCdkConstructLibrary({
   name: "waf-http-api",
