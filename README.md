@@ -1,7 +1,10 @@
 # WAF HTTP API
 
+
 A CDK construct that fronts an HTTP API with a CloudFront distribution and protects it with AWS WAF.
 
+[![npm version](https://badge.fury.io/js/waf-http-api.svg)](https://badge.fury.io/js/waf-http-api)
+[![PyPI version](https://badge.fury.io/py/waf-http-api.svg)](https://badge.fury.io/py/waf-http-api)
 ## Features
 
 - **Enhanced Security:** Protects your HTTP API with AWS WAF rules
