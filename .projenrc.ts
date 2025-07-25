@@ -1,4 +1,4 @@
-import { awscdk } from "projen";
+import { awscdk, TextFile } from "projen";
 const project = new awscdk.AwsCdkConstructLibrary({
   name: "waf-http-api",
   packageName: "waf-http-api",
@@ -54,11 +54,13 @@ project.package.addField("scripts", {
   prepare: "husky install",
 });
 
-// Create the pre-commit hook for husky
-import { TextFile } from "projen";
 new TextFile(project, ".husky/pre-commit", {
   executable: true,
-  lines: ["#!/bin/sh", '. "$(dirname "$0")/_/husky.sh"', "npx lint-staged"],
+  lines: [
+    "#!/bin/sh",
+    '. "$(dirname "$0")/_/husky.sh"',
+    "ESLINT_USE_FLAT_CONFIG=false npx lint-staged",
+  ],
 });
 
 project.synth();
