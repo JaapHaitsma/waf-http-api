@@ -19,3 +19,4 @@ LICENSE
 package.json
 tsconfig.dev.json
 example/
+*.md

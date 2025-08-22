@@ -1,10 +1,10 @@
 # WAF HTTP API
 
-
 A CDK construct that fronts an HTTP API with a CloudFront distribution and protects it with AWS WAF.
 
 [![npm version](https://badge.fury.io/js/waf-http-api.svg)](https://badge.fury.io/js/waf-http-api)
 [![PyPI version](https://badge.fury.io/py/waf-http-api.svg)](https://badge.fury.io/py/waf-http-api)
+
 ## Features
 
 - **Enhanced Security:** Protects your HTTP API with AWS WAF rules
@@ -28,6 +28,24 @@ npm install waf-http-api
 ```bash
 pip install waf-http-api
 ```
+
+## Examples
+
+Complete working examples demonstrating the usage of `waf-http-api` can be found in the [`example/`](./example/) directory:
+
+- **[TypeScript Example](./example/typescript/)**: Full CDK application with Node.js 22 Lambda, comprehensive tests, and deployment scripts
+- **[Python Example](./example/python/)**: Complete CDK application with Python 3.12 Lambda, pytest test suite, and development tools
+
+Both examples include:
+
+- ✅ Complete CDK stacks using the `WafHttpApi` construct
+- ✅ Lambda functions with origin verification
+- ✅ HTTP API Gateway with multiple routes
+- ✅ Comprehensive test suites
+- ✅ Build and deployment scripts
+- ✅ Detailed documentation
+
+These examples serve as practical references for implementing WAF-protected HTTP APIs in production environments.
 
 ## Usage
 
