@@ -1,5 +1,9 @@
 import * as cdk from "aws-cdk-lib";
 import { HttpApi, HttpMethod } from "aws-cdk-lib/aws-apigatewayv2";
+import {
+  HttpLambdaAuthorizer,
+  HttpLambdaResponseType,
+} from "aws-cdk-lib/aws-apigatewayv2-authorizers";
 import { HttpLambdaIntegration } from "aws-cdk-lib/aws-apigatewayv2-integrations";
 import { Function, Runtime, Code } from "aws-cdk-lib/aws-lambda";
 import { Construct } from "constructs";
@@ -16,17 +20,7 @@ export class WafHttpApiExampleStack extends cdk.Stack {
       code: Code.fromInline(`
         exports.handler = async (event) => {
           console.log('Event:', JSON.stringify(event, null, 2));
-          
-          // Check for the CloudFront secret header for origin verification
-          const secretHeader = event.headers['x-origin-verify'];
-          const expectedSecret = process.env.CLOUDFRONT_SECRET;
-          
-          if (secretHeader && expectedSecret && secretHeader === expectedSecret) {
-            console.log('✅ Request verified as coming from CloudFront');
-          } else {
-            console.log('⚠️  Request may not be from CloudFront (missing or invalid secret header)');
-          }
-          
+
           return {
             statusCode: 200,
             headers: {
@@ -41,9 +35,30 @@ export class WafHttpApiExampleStack extends cdk.Stack {
               requestId: event.requestContext?.requestId,
               sourceIp: event.requestContext?.http?.sourceIp,
               userAgent: event.headers['user-agent'],
-              cloudFrontVerified: secretHeader === expectedSecret
+              // Authorization is performed by a dedicated Lambda authorizer
             }, null, 2)
           };
+        };
+      `),
+    });
+
+    // Create a Lambda Authorizer that verifies the CloudFront secret header
+    const authorizerLambda = new Function(this, "AuthorizerLambda", {
+      runtime: Runtime.NODEJS_22_X,
+      handler: "index.handler",
+      code: Code.fromInline(`
+        exports.handler = async (event) => {
+          try {
+      const headers = (event && event.headers) || {};
+      const identity = (event && Array.isArray(event.identitySource) && event.identitySource[0]) || undefined;
+      const provided = identity || headers['x-origin-verify'] || headers['X-Origin-Verify'];
+            const expected = process.env.CLOUDFRONT_SECRET;
+            const ok = !!provided && !!expected && provided === expected;
+            return { isAuthorized: ok };
+          } catch (e) {
+            console.error('Authorizer error', e);
+            return { isAuthorized: false };
+          }
         };
       `),
     });
@@ -60,17 +75,22 @@ export class WafHttpApiExampleStack extends cdk.Stack {
       helloLambda,
     );
 
+    // Wire up the HTTP API Lambda authorizer (simple response type)
+    const authorizer = new HttpLambdaAuthorizer(
+      "OriginHeaderAuthorizer",
+      authorizerLambda,
+      {
+        responseTypes: [HttpLambdaResponseType.SIMPLE],
+        identitySource: ["$request.header.x-origin-verify"],
+      },
+    );
+
     // Add routes to the HTTP API
     httpApi.addRoutes({
       path: "/",
       methods: [HttpMethod.GET],
       integration: lambdaIntegration,
-    });
-
-    httpApi.addRoutes({
-      path: "/hello",
-      methods: [HttpMethod.GET, HttpMethod.POST],
-      integration: lambdaIntegration,
+      authorizer,
     });
 
     // Create the WAF-protected HTTP API using our construct
@@ -103,21 +123,22 @@ export class WafHttpApiExampleStack extends cdk.Stack {
       // ],
     });
 
-    // Set the CloudFront secret as an environment variable for the Lambda
-    helloLambda.addEnvironment(
+    // Provide the CloudFront secret to the authorizer
+    authorizerLambda.addEnvironment(
       "CLOUDFRONT_SECRET",
       protectedApi.secretHeaderValue,
     );
 
     // Output the important endpoints and information
-    new cdk.CfnOutput(this, "HttpApiUrl", {
-      value: httpApi.url!,
-      description: "Direct HTTP API URL (not recommended for production use!!)",
-    });
 
     new cdk.CfnOutput(this, "CloudFrontUrl", {
       value: `https://${protectedApi.distribution.distributionDomainName}`,
       description: "CloudFront distribution URL (recommended endpoint)",
+    });
+
+    new cdk.CfnOutput(this, "HttpApiUrl", {
+      value: httpApi.url!,
+      description: "Direct HTTP API URL (blocked by authorizer)",
     });
 
     new cdk.CfnOutput(this, "CloudFrontDistributionId", {

@@ -7,16 +7,17 @@ This is a Python CDK example that demonstrates how to use the `waf-http-api` con
 This example creates:
 
 - **Lambda Function**: Python 3.12 runtime that returns a greeting with request information
-- **HTTP API Gateway**: RESTful API with multiple routes (`/` and `/hello`)
+- **HTTP API Gateway**: HTTP API with multiple routes (`/` and `/hello`)
+- **Lambda Authorizer**: Validates a secret header to ensure traffic comes via CloudFront
 - **WafHttpApi Construct**: Automatically creates CloudFront distribution and WAF WebACL
-- **Origin Verification**: Secret header mechanism to ensure requests come through CloudFront
+- **Origin Verification**: CloudFront injects a secret header validated by the authorizer
 
 ## Features
 
 - ✅ **Python 3.12 Lambda Runtime**: Latest Python runtime for optimal performance
 - ✅ **WafHttpApi Construct**: Uses the official `waf-http-api` package for simplified setup
 - ✅ **Comprehensive Security**: WAF protection with IP reputation and common rule sets
-- ✅ **Origin Verification**: CloudFront adds secret headers to verify legitimate requests
+- ✅ **Origin Verification**: Lambda authorizer validates CloudFront-injected secret header
 - ✅ **Multiple HTTP Methods**: Supports GET and POST requests
 - ✅ **CORS Support**: Configured for cross-origin requests
 - ✅ **Detailed Logging**: Request information and verification status
@@ -73,38 +74,35 @@ cdk destroy
 
 After deployment, you'll get several outputs:
 
-- **CloudFrontUrl**: Use this endpoint for production traffic (recommended)
-- **HttpApiUrl**: Direct API Gateway URL (not recommended for production)
+- **CloudFrontUrl**: Use this endpoint for production traffic (authorizer passes)
+- **HttpApiUrl**: Direct API Gateway URL (will return 401 Unauthorized due to authorizer)
 
 ```bash
-# Test the API through CloudFront (recommended)
-curl https://d1234567890.cloudfront.net/
+# Direct API (expected 401 Unauthorized)
+curl -i https://YOUR_HTTP_API_ID.execute-api.YOUR-REGION.amazonaws.com/
 
-# Test the hello endpoint
-curl https://d1234567890.cloudfront.net/hello
+# Through CloudFront (expected 200 OK; header is injected by CloudFront)
+curl -i https://YOUR_CLOUDFRONT_DOMAIN.cloudfront.net/
 
-# POST request
-curl -X POST https://d1234567890.cloudfront.net/hello \
-  -H "Content-Type: application/json" \
-  -d '{"test": "data"}'
-```
 
 ## Project Structure
 
 ```
+
 example/python/
-├── app.py                              # CDK app entry point
+├── app.py # CDK app entry point
 ├── waf_http_api_example/
-│   ├── __init__.py
-│   └── waf_http_api_example_stack.py   # Main stack definition
+│ ├── **init**.py
+│ └── waf_http_api_example_stack.py # Main stack definition
 ├── tests/
-│   ├── __init__.py
-│   └── test_waf_http_api_example.py    # Comprehensive test suite
-├── requirements.txt                    # Runtime dependencies
-├── requirements-dev.txt                # Development dependencies
-├── cdk.json                           # CDK configuration
-└── README.md                          # This file
-```
+│ ├── **init**.py
+│ └── test_waf_http_api_example.py # Comprehensive test suite
+├── requirements.txt # Runtime dependencies
+├── requirements-dev.txt # Development dependencies
+├── cdk.json # CDK configuration
+└── README.md # This file
+
+````
 
 ## Key Components
 
@@ -112,7 +110,7 @@ example/python/
 
 - **Runtime**: Python 3.12
 - **Handler**: Inline code that processes HTTP requests
-- **Features**: Origin verification, detailed logging, CORS headers
+- **Features**: Detailed logging, CORS headers; origin verification handled by authorizer
 
 ### HTTP API Gateway
 
@@ -144,7 +142,7 @@ example/python/
 ## Security Features
 
 1. **WAF Protection**: Blocks malicious requests before they reach your API
-2. **Origin Verification**: Secret headers ensure requests come through CloudFront
+2. **Origin Verification**: Lambda authorizer validates secret header set by CloudFront
 3. **HTTPS Only**: All traffic redirected to HTTPS
 4. **IP Reputation**: Automatic blocking of known malicious IP addresses
 5. **Common Attack Protection**: OWASP Top 10 and common web vulnerabilities
@@ -176,7 +174,7 @@ pytest -v
 
 # Run specific test
 pytest tests/test_waf_http_api_example.py::TestWafHttpApiExampleStack::test_lambda_function_created_with_python_312
-```
+````
 
 ### Adding Custom WAF Rules
 

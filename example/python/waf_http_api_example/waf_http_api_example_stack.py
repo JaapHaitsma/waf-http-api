@@ -5,6 +5,7 @@ from aws_cdk import (
     aws_lambda as _lambda,
     aws_apigatewayv2 as apigwv2,
     aws_apigatewayv2_integrations as integrations,
+    aws_apigatewayv2_authorizers as authorizers,
 )
 from constructs import Construct
 from waf_http_api import WafHttpApi
@@ -37,18 +38,6 @@ from datetime import datetime
 def handler(event, context):
     print(f'Event: {json.dumps(event, indent=2)}')
     
-    # Check for the CloudFront secret header for origin verification
-    headers = event.get('headers', {})
-    secret_header = headers.get('x-origin-verify')
-    expected_secret = os.environ.get('CLOUDFRONT_SECRET')
-    
-    if secret_header and expected_secret and secret_header == expected_secret:
-        print('✅ Request verified as coming from CloudFront')
-        cloudfront_verified = True
-    else:
-        print('⚠️  Request may not be from CloudFront (missing or invalid secret header)')
-        cloudfront_verified = False
-    
     return {
         'statusCode': 200,
         'headers': {
@@ -62,11 +51,36 @@ def handler(event, context):
             'timestamp': datetime.utcnow().isoformat() + 'Z',
             'requestId': event.get('requestContext', {}).get('requestId'),
             'sourceIp': event.get('requestContext', {}).get('http', {}).get('sourceIp'),
-            'userAgent': headers.get('user-agent'),
-            'cloudFrontVerified': cloudfront_verified
+            'userAgent': event.get('headers', {}).get('user-agent'),
         }, indent=2)
     }
             """)
+        )
+
+        # Create a Lambda authorizer that validates the secret header
+        authorizer_lambda = _lambda.Function(
+            self,
+            "AuthorizerLambda",
+            runtime=_lambda.Runtime.PYTHON_3_12,
+            handler="index.handler",
+            code=_lambda.Code.from_inline(
+                """
+import os
+
+def handler(event, context):
+    try:
+        headers = (event or {}).get('headers', {}) or {}
+        identity_list = (event or {}).get('identitySource') or []
+        identity = identity_list[0] if isinstance(identity_list, list) and identity_list else None
+        provided = identity or headers.get('x-origin-verify') or headers.get('X-Origin-Verify')
+        expected = os.environ.get('CLOUDFRONT_SECRET')
+        ok = bool(provided) and bool(expected) and provided == expected
+        return { 'isAuthorized': ok }
+    except Exception as e:
+        print('Authorizer error:', e)
+        return { 'isAuthorized': False }
+                """
+            ),
         )
 
         # Create the HTTP API Gateway
@@ -82,17 +96,20 @@ def handler(event, context):
             hello_lambda
         )
 
+        # Lambda authorizer configured for SIMPLE responses
+        lambda_authorizer = authorizers.HttpLambdaAuthorizer(
+            "OriginHeaderAuthorizer",
+            authorizer_lambda,
+            response_types=[authorizers.HttpLambdaResponseType.SIMPLE],
+            identity_source=["$request.header.x-origin-verify"],
+        )
+
         # Add routes to the HTTP API
         http_api.add_routes(
             path="/",
             methods=[apigwv2.HttpMethod.GET],
-            integration=lambda_integration
-        )
-
-        http_api.add_routes(
-            path="/hello",
-            methods=[apigwv2.HttpMethod.GET, apigwv2.HttpMethod.POST],
-            integration=lambda_integration
+            integration=lambda_integration,
+            authorizer=lambda_authorizer,
         )
 
         # Create the WAF-protected HTTP API using our construct
@@ -126,8 +143,8 @@ def handler(event, context):
             # ],
         )
 
-        # Set the CloudFront secret as an environment variable for the Lambda
-        hello_lambda.add_environment(
+        # Provide the CloudFront secret to the authorizer
+        authorizer_lambda.add_environment(
             "CLOUDFRONT_SECRET",
             protected_api.secret_header_value
         )
@@ -139,15 +156,15 @@ def handler(event, context):
 
         # Output the important endpoints and information
         CfnOutput(
-            self, "HttpApiUrl",
-            value=http_api.url,
-            description="Direct HTTP API URL (not recommended for production use!)"
-        )
-
-        CfnOutput(
             self, "CloudFrontUrl",
             value=f"https://{protected_api.distribution.distribution_domain_name}",
             description="CloudFront distribution URL (recommended endpoint)"
+        )
+
+        CfnOutput(
+            self, "HttpApiUrl",
+            value=http_api.url,
+            description="Direct HTTP API URL (blocked by authorizer)"
         )
 
         CfnOutput(

@@ -8,11 +8,13 @@ This CDK application creates:
 
 1. **Lambda Function**: A simple Node.js function that returns a greeting message
 2. **HTTP API Gateway**: An AWS API Gateway HTTP API that routes requests to the Lambda
-3. **WAF-Protected CloudFront Distribution**: Using the `waf-http-api` construct to:
+3. **Lambda Authorizer**: Validates a secret header to ensure traffic comes via CloudFront
+4. **WAF-Protected CloudFront Distribution**: Using the `waf-http-api` construct to:
    - Front the HTTP API with CloudFront for global distribution and caching
    - Protect the API with AWS WAF using managed rules
-   - Add origin verification through a secret header
-   - Provide enhanced security and performance
+
+- Add origin verification through a secret header injected by CloudFront
+- Provide enhanced security and performance
 
 ## Architecture
 
@@ -56,40 +58,43 @@ npx cdk deploy
 The deployment will output several important URLs and values:
 
 - **CloudFrontUrl**: The main endpoint you should use (protected by WAF)
-- **HttpApiUrl**: Direct API Gateway URL (not recommended for production)
-- **SecretHeaderValue**: Used for origin verification in your Lambda
+- **HttpApiUrl**: Direct API Gateway URL (will return 401 Unauthorized due to authorizer)
+- **SecretHeaderValue**: Used by the Lambda authorizer for origin verification
 
 ### 4. Test the API
 
 Once deployed, you can test the API using the CloudFront URL:
 
 ```bash
-# Test the root endpoint
-curl https://YOUR_CLOUDFRONT_DOMAIN.cloudfront.net/
+# Direct API (expected 401 Unauthorized because the authorizer rejects requests without the secret header)
+curl -i https://YOUR_HTTP_API_ID.execute-api.YOUR-REGION.amazonaws.com/
 
-# Test the hello endpoint
-curl https://YOUR_CLOUDFRONT_DOMAIN.cloudfront.net/hello
+# Through CloudFront (expected 200 OK; CloudFront injects the secret header used by the authorizer)
+curl -i https://YOUR_CLOUDFRONT_DOMAIN.cloudfront.net/
 
-# Test with POST
-curl -X POST https://YOUR_CLOUDFRONT_DOMAIN.cloudfront.net/hello \
+# Hello endpoint via CloudFront
+curl -i https://YOUR_CLOUDFRONT_DOMAIN.cloudfront.net/hello
+
+# POST via CloudFront
+curl -i -X POST https://YOUR_CLOUDFRONT_DOMAIN.cloudfront.net/hello \
   -H "Content-Type: application/json" \
   -d '{"name": "World"}'
+
+# Optional: prove the authorizer behavior against the direct API by sending the header manually
+curl -i https://YOUR_HTTP_API_ID.execute-api.YOUR-REGION.amazonaws.com/ \
+  -H "x-origin-verify: YOUR_SECRET_HEADER_VALUE"
 ```
 
 ## Key Features Demonstrated
 
-### 1. Origin Verification
+### 1. Origin Verification via Lambda Authorizer
 
-The Lambda function checks for the CloudFront secret header to verify requests are coming through CloudFront:
+An HTTP API Lambda authorizer with SIMPLE responses validates the secret header. The authorizer is set with:
 
-```typescript
-const secretHeader = event.headers["x-origin-verify"];
-const expectedSecret = process.env.CLOUDFRONT_SECRET;
+- identitySource: `$request.header.x-origin-verify`
+- environment variable: `CLOUDFRONT_SECRET` (set from the construct’s generated value)
 
-if (secretHeader === expectedSecret) {
-  console.log("✅ Request verified as coming from CloudFront");
-}
-```
+The authorizer returns `{ isAuthorized: true | false }` and the handler no longer performs this check.
 
 ### 2. WAF Protection
 
@@ -155,7 +160,7 @@ const protectedApi = new WafHttpApi(this, "ProtectedApi", {
 ├── bin/
 │   └── cdk.ts           # CDK app entry point
 ├── lib/
-│   └── typescript-stack.ts  # Main stack definition
+│   └── waf-http-api-example-stack.ts  # Main stack definition
 ├── test/
 │   └── typescript.test.ts   # Unit tests
 ├── cdk.json             # CDK configuration
