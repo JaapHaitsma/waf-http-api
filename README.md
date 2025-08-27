@@ -326,6 +326,12 @@ See [`API.md`](API.md) for full API documentation.
 
 ## Development
 
+First run
+
+```bash
+yarn install
+```
+
 This project uses [projen](https://github.com/projen/projen) for project management. To synthesize project files after making changes to `.projenrc.ts`, run:
 
 ```bash
