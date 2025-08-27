@@ -71,4 +71,8 @@ new TextFile(project, ".eslintignore", {
   ],
 });
 
+// Ensure the root tsconfig files do not apply to example/*
+project.tsconfig?.addExclude("example/**");
+project.tsconfigDev?.addExclude("example/**");
+
 project.synth();
