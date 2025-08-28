@@ -26,6 +26,6 @@
   "dependencies": {
     "aws-cdk-lib": "2.200.2",
     "constructs": "10.0.5",
-    "waf-http-api": "^1.2.0"
+    "waf-http-api": "latest"
   }
 }
