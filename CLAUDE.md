@@ -68,7 +68,14 @@ Everything lives in [src/index.ts](src/index.ts) — one `WafHttpApi` construct.
 5. **CloudFront distribution** — origin domain is extracted from the HTTP API URL with `Fn.select(2, Fn.split("/", props.httpApi.url!))` (token-safe, works at synth time without resolving the URL). Caching is disabled, all methods allowed, and the origin request policy is `ALL_VIEWER_EXCEPT_HOST_HEADER` so API Gateway routing still works.
 6. **Route 53 A + AAAA alias records** — created only when both `hostedZone` and `domain` are present.
 
-**Origin verification:** `WafHttpApi.SECRET_HEADER_NAME` (`X-Origin-Verify`) is a static constant; `secretHeaderValue` is `crypto.randomBytes(16)` generated at **synth time**, so it changes on every synth and is baked into the template as a CloudFront custom header. Backends compare the incoming header against this value (surfaced to Lambda via an env var in the examples).
+**Origin verification:** `WafHttpApi.SECRET_HEADER_NAME` (`X-Origin-Verify`) is a static constant. `secretHeaderValue` has two sources, resolved in the constructor between the hosted-zone block and the WebACL:
+
+1. **Default** — the construct creates an `AWS::SecretsManager::Secret` with `generateSecretString` (exposed as `originSecret`) and the header carries its dynamic reference, so CloudFormation mints the value once at create time and the template is synth-stable. `secretHeaderValue` is then an **unresolved token**: fine in any resource property, broken in `CfnOutput` or any synth-time string operation.
+2. **`secretHeaderValue` prop** — used verbatim after `validateSecretHeaderValue` (empty/control-chars/>1783 chars throw; <16 chars warns; `Token.isUnresolved` values skip all checks). No secret resource is created, so this is also the zero-cost path.
+
+In v1 the value was `crypto.randomBytes(16)` at **synth time**, so it changed on every synth — that is the NMT-82 bug, and there is deliberately no way to opt back into it.
+
+Backends compare the incoming header against this value (surfaced to Lambda via an env var in the examples).
 
 Error messages are deliberately long, emoji-prefixed, and prescriptive (issue → solution → examples). Match that style when adding validation — several tests assert on message content.
 

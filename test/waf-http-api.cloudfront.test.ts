@@ -1,4 +1,4 @@
-import { App, Stack } from "aws-cdk-lib";
+import { App, SecretValue, Stack } from "aws-cdk-lib";
 import { Template } from "aws-cdk-lib/assertions";
 import { HttpApi } from "aws-cdk-lib/aws-apigatewayv2";
 import { WafHttpApi } from "../src/index";
@@ -46,6 +46,7 @@ describe("WafHttpApi - CloudFront Configuration", () => {
   test("should add secret header to origin requests", () => {
     new WafHttpApi(stack, "TestWafApi", {
       httpApi,
+      secretHeaderValue: "a".repeat(32),
     });
 
     const template = Template.fromStack(stack);
@@ -70,17 +71,146 @@ describe("WafHttpApi - CloudFront Configuration", () => {
     expect(customHeader.HeaderValue).toHaveLength(32); // 16 bytes = 32 hex chars
   });
 
-  test("should generate unique secret header values for different instances", () => {
+  test("should generate a separate secret for each instance", () => {
     const wafApi1 = new WafHttpApi(stack, "TestWafApi1", { httpApi });
     const wafApi2 = new WafHttpApi(stack, "TestWafApi2", {
       httpApi: new HttpApi(stack, "TestApi2"),
     });
 
     expect(wafApi1.secretHeaderValue).not.toBe(wafApi2.secretHeaderValue);
-    expect(wafApi1.secretHeaderValue).toHaveLength(32);
-    expect(wafApi2.secretHeaderValue).toHaveLength(32);
-    expect(wafApi1.secretHeaderValue).toMatch(/^[a-f0-9]{32}$/);
-    expect(wafApi2.secretHeaderValue).toMatch(/^[a-f0-9]{32}$/);
+    Template.fromStack(stack).resourceCountIs("AWS::SecretsManager::Secret", 2);
+  });
+
+  describe("Managed Origin Secret", () => {
+    test("should create exactly one Secrets Manager secret by default", () => {
+      new WafHttpApi(stack, "TestWafApi", { httpApi });
+
+      const template = Template.fromStack(stack);
+      template.resourceCountIs("AWS::SecretsManager::Secret", 1);
+      template.hasResourceProperties("AWS::SecretsManager::Secret", {
+        GenerateSecretString: {
+          PasswordLength: 32,
+          ExcludePunctuation: true,
+          IncludeSpace: false,
+        },
+      });
+    });
+
+    test("should not give the managed secret a physical name", () => {
+      // A physical name plus the Secrets Manager recovery window makes a stack
+      // delete followed by a recreate fail on a name collision.
+      new WafHttpApi(stack, "TestWafApi", { httpApi });
+
+      const secrets = Template.fromStack(stack).findResources(
+        "AWS::SecretsManager::Secret",
+      );
+      expect(Object.values(secrets)[0].Properties.Name).toBeUndefined();
+    });
+
+    test("should reference the managed secret as a dynamic reference in the origin header", () => {
+      new WafHttpApi(stack, "TestWafApi", { httpApi });
+
+      const template = Template.fromStack(stack);
+      const secretLogicalId = Object.keys(
+        template.findResources("AWS::SecretsManager::Secret"),
+      )[0];
+
+      const distributions = template.findResources(
+        "AWS::CloudFront::Distribution",
+      );
+      const origin =
+        Object.values(distributions)[0].Properties.DistributionConfig
+          .Origins[0];
+      const customHeader = origin.OriginCustomHeaders[0];
+
+      expect(customHeader.HeaderName).toBe("X-Origin-Verify");
+      expect(customHeader.HeaderValue).toEqual({
+        "Fn::Join": [
+          "",
+          [
+            "{{resolve:secretsmanager:",
+            { Ref: secretLogicalId },
+            ":SecretString:::}}",
+          ],
+        ],
+      });
+    });
+
+    test("should not create a secret when secretHeaderValue is provided", () => {
+      new WafHttpApi(stack, "TestWafApi", {
+        httpApi,
+        secretHeaderValue: "stable-origin-verify-secret-001",
+      });
+
+      const template = Template.fromStack(stack);
+      template.resourceCountIs("AWS::SecretsManager::Secret", 0);
+
+      const distributions = template.findResources(
+        "AWS::CloudFront::Distribution",
+      );
+      const origin =
+        Object.values(distributions)[0].Properties.DistributionConfig
+          .Origins[0];
+      expect(origin.OriginCustomHeaders[0].HeaderValue).toBe(
+        "stable-origin-verify-secret-001",
+      );
+    });
+
+    test("should render a supplied deploy-time token as a dynamic reference", () => {
+      new WafHttpApi(stack, "TestWafApi", {
+        httpApi,
+        secretHeaderValue: SecretValue.secretsManager(
+          "prod/api/origin-verify",
+        ).unsafeUnwrap(),
+      });
+
+      const distributions = Template.fromStack(stack).findResources(
+        "AWS::CloudFront::Distribution",
+      );
+      const origin =
+        Object.values(distributions)[0].Properties.DistributionConfig
+          .Origins[0];
+
+      expect(origin.OriginCustomHeaders[0].HeaderValue).toBe(
+        "{{resolve:secretsmanager:prod/api/origin-verify:SecretString:::}}",
+      );
+    });
+  });
+
+  describe("Template Stability Across Synths", () => {
+    const synthTemplate = (props: Record<string, unknown> = {}) => {
+      const localApp = new App();
+      const localStack = new Stack(localApp, "TestStack");
+      const localHttpApi = new HttpApi(localStack, "TestApi");
+      new WafHttpApi(localStack, "TestWafApi", {
+        httpApi: localHttpApi,
+        ...props,
+      });
+      return Template.fromStack(localStack).toJSON();
+    };
+
+    test("should produce an identical template on two separate synths by default", () => {
+      expect(synthTemplate()).toEqual(synthTemplate());
+    });
+
+    test("should produce an identical template on two separate synths when secretHeaderValue is provided", () => {
+      expect(
+        synthTemplate({ secretHeaderValue: "stable-origin-verify-secret-001" }),
+      ).toEqual(
+        synthTemplate({ secretHeaderValue: "stable-origin-verify-secret-001" }),
+      );
+    });
+
+    test("should produce an identical template on two separate synths for a deploy-time token", () => {
+      const token = () =>
+        synthTemplate({
+          secretHeaderValue: SecretValue.secretsManager(
+            "prod/api/origin-verify",
+          ).unsafeUnwrap(),
+        });
+
+      expect(token()).toEqual(token());
+    });
   });
 
   test("should configure CloudFront behavior policies correctly", () => {

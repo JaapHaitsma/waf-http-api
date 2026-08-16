@@ -1,11 +1,11 @@
-import * as crypto from "crypto";
-import { Fn } from "aws-cdk-lib";
+import { Annotations, Fn, RemovalPolicy, Token } from "aws-cdk-lib";
 import { HttpApi } from "aws-cdk-lib/aws-apigatewayv2";
 import * as acm from "aws-cdk-lib/aws-certificatemanager";
 import * as cloudfront from "aws-cdk-lib/aws-cloudfront";
 import * as origins from "aws-cdk-lib/aws-cloudfront-origins";
 import * as route53 from "aws-cdk-lib/aws-route53";
 import * as route53Targets from "aws-cdk-lib/aws-route53-targets";
+import * as secretsmanager from "aws-cdk-lib/aws-secretsmanager";
 import * as wafv2 from "aws-cdk-lib/aws-wafv2";
 import { Construct } from "constructs";
 
@@ -140,6 +140,74 @@ export interface WafHttpApiProps {
    * }
    */
   readonly hostedZone?: route53.IHostedZone;
+
+  /**
+   * Optional: A fixed value for the CloudFront origin verification secret header
+   * (`WafHttpApi.SECRET_HEADER_NAME`, i.e. `X-Origin-Verify`).
+   *
+   * Provide this when you want to own the secret's lifecycle yourself instead of letting the
+   * construct manage it. When omitted, the construct creates an AWS Secrets Manager secret whose
+   * value is generated **by CloudFormation at creation time** and references it from the origin
+   * custom header. That is the recommended default: the template then contains only a dynamic
+   * reference, so synthesis is deterministic and a no-op deployment is a no-op diff. The generated
+   * secret is exposed as `originSecret`.
+   *
+   * Supplying a value here creates no Secrets Manager resource, so it is also the way to avoid the
+   * secret's monthly cost — for example in short-lived preview stacks.
+   *
+   * **Ways to supply the value.** All of the following are plain strings or CDK string tokens
+   * and are accepted here:
+   *
+   * | Mechanism | What lands in the CloudFormation template |
+   * | --- | --- |
+   * | A literal string | The plaintext secret |
+   * | `SecretValue.secretsManager('name').unsafeUnwrap()` | `{{resolve:secretsmanager:name:SecretString:::}}` |
+   * | `new CfnDynamicReference(CfnDynamicReferenceService.SSM, '/name').toString()` | `{{resolve:ssm:/name}}` |
+   * | `StringParameter.valueForStringParameter(this, '/name')` | A `Ref` to an `AWS::SSM::Parameter::Value<String>` stack parameter |
+   * | `new CfnParameter(this, 'S', { type: 'String', noEcho: true }).valueAsString` | A `Ref` to a stack parameter |
+   *
+   * **SSM SecureString does not work here.** `{{resolve:ssm-secure:...}}` dynamic references are
+   * only resolved in a short allow-list of resource properties: Directory Service
+   * MicrosoftAD/SimpleAD passwords, ElastiCache `AuthToken`, IAM `LoginProfile.Password`, the
+   * Kinesis Firehose Redshift password, OpsWorks App/Stack passwords, and the RDS and Redshift
+   * `MasterUserPassword`. `AWS::CloudFront::Distribution` is not on that list, so the literal
+   * text `{{resolve:ssm-secure:...}}` would be forwarded to your origin as the header value.
+   * Use a Secrets Manager reference instead.
+   *
+   * **Note on `SecretValue`:** this property is a `string`, so a `SecretValue` cannot be passed
+   * directly. Use `.unsafeUnwrap()`, not `.toString()` — `.toString()` returns a token rather
+   * than throwing, but resolving it fails when the `@aws-cdk/core:checkSecretUsage` feature flag
+   * is enabled.
+   *
+   * **Note on visibility:** whichever mechanism you use, the resolved value is readable from the
+   * CloudFront distribution configuration by anyone with `cloudfront:GetDistribution`. Dynamic
+   * references keep the secret out of the template, not out of CloudFront.
+   *
+   * **Rotation:** changing this value changes the CloudFront distribution and takes minutes to
+   * propagate. Make your origin accept both the old and the new value across the deployment that
+   * changes it. See "Origin Secret Stability and Rotation" in the README.
+   *
+   * @type {string}
+   * @default - An AWS Secrets Manager secret created and managed by the construct, exposed as `originSecret`
+   * @example
+   * // Resolved from Secrets Manager at deployment time, using a secret you already own
+   * import { SecretValue } from 'aws-cdk-lib';
+   *
+   * const protectedApi = new WafHttpApi(this, 'MyApi', {
+   *   httpApi: myHttpApi,
+   *   secretHeaderValue: SecretValue
+   *     .secretsManager('prod/api/origin-verify')
+   *     .unsafeUnwrap(),
+   * });
+   *
+   * @example
+   * // A fixed literal value (simplest, but the secret lives in source control)
+   * const protectedApi = new WafHttpApi(this, 'MyApi', {
+   *   httpApi: myHttpApi,
+   *   secretHeaderValue: 'a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6',
+   * });
+   */
+  readonly secretHeaderValue?: string;
 }
 
 /**
@@ -158,9 +226,18 @@ export interface WafHttpApiProps {
  * automatically generated with DNS validation.
  *
  * @example
- * // Basic usage without custom domain
+ * // Basic usage without custom domain.
+ * // The construct creates a Secrets Manager secret for origin verification, so the
+ * // synthesized template is identical across synthesises.
  * const protectedApi = new WafHttpApi(this, 'MyProtectedApi', {
  *   httpApi: myHttpApi,
+ * });
+ *
+ * @example
+ * // Bring your own origin verification secret instead of a construct-managed one
+ * const byoSecretApi = new WafHttpApi(this, 'ByoSecretApi', {
+ *   httpApi: myHttpApi,
+ *   secretHeaderValue: SecretValue.secretsManager('prod/api/origin-verify').unsafeUnwrap(),
  * });
  *
  * @example
@@ -271,10 +348,22 @@ export class WafHttpApi extends Construct {
   public readonly distribution: cloudfront.Distribution;
 
   /**
-   * The randomly generated secret value for the custom header.
-   * This value is unique for each deployment of the construct and should be used
-   * in your HTTP API's authorizer or backend logic to validate that requests
-   * are coming through CloudFront and not directly from the internet.
+   * The secret value CloudFront sends to the origin in the `X-Origin-Verify` header.
+   * Use it in your HTTP API's authorizer or backend logic to validate that requests are coming
+   * through CloudFront and not directly from the internet.
+   *
+   * What this holds depends on how the construct was configured:
+   *
+   * - **By default** it is an unresolved CloudFormation dynamic reference to the secret in
+   *   `originSecret`, resolved at deployment time.
+   * - **With the `secretHeaderValue` prop** it is exactly the value you supplied.
+   *
+   * **This may therefore be an unresolved token.** A token can be passed into any resource
+   * property — a Lambda environment variable, another construct's props — and CloudFormation
+   * resolves it during deployment. It cannot be inspected at synthesis time: `.length`,
+   * `.substring()` and string comparisons on it are meaningless, and it must **not** be published
+   * through `CfnOutput`, because dynamic references are resolved in resource properties only and a
+   * stack output would emit the literal `{{resolve:...}}` text.
    *
    * @readonly
    * @type {string}
@@ -291,7 +380,8 @@ export class WafHttpApi extends Construct {
    *   // Continue with request processing...
    * };
    *
-   * // Set as environment variable in Lambda
+   * // Set as environment variable in Lambda. This works for every configuration, including an
+   * // unresolved token: CloudFormation resolves it into the function's environment on deploy.
    * const lambda = new NodejsFunction(this, 'ApiHandler', {
    *   environment: {
    *     CLOUDFRONT_SECRET: wafHttpApi.secretHeaderValue
@@ -299,6 +389,31 @@ export class WafHttpApi extends Construct {
    * });
    */
   public readonly secretHeaderValue: string;
+
+  /**
+   * The AWS Secrets Manager secret holding the origin verification value.
+   *
+   * This property is defined only when the construct manages the secret itself, which is the
+   * default. It is `undefined` when `secretHeaderValue` was supplied.
+   *
+   * Use it to grant an origin Lambda read access so it can fetch the value at runtime instead of
+   * receiving it as a plaintext environment variable. That also lets the origin accept both
+   * `AWSCURRENT` and `AWSPREVIOUS` during a rotation, which avoids the rejection window that a
+   * distribution update would otherwise open.
+   *
+   * @readonly
+   * @type {secretsmanager.ISecret | undefined}
+   * @example
+   * // Let the origin read the secret at runtime rather than baking it into the environment
+   * if (wafHttpApi.originSecret) {
+   *   wafHttpApi.originSecret.grantRead(myLambda);
+   *   myLambda.addEnvironment(
+   *     'ORIGIN_SECRET_ARN',
+   *     wafHttpApi.originSecret.secretArn,
+   *   );
+   * }
+   */
+  public readonly originSecret?: secretsmanager.ISecret;
 
   /**
    * The SSL certificate used for the custom domain.
@@ -437,6 +552,11 @@ export class WafHttpApi extends Construct {
    * - `wafRules` (optional): Custom WAF rules, defaults to AWS managed rules
    * - `domain` (optional): Custom domain name for the CloudFront distribution
    * - `certificate` (optional): SSL certificate for the custom domain (must be in us-east-1)
+   * - `secretHeaderValue` (optional): Bring your own origin verification secret
+   *
+   * **Origin Verification Secret Behavior:**
+   * - If not provided: a Secrets Manager secret is created and referenced (deterministic)
+   * - If provided: that value is used verbatim and no Secrets Manager secret is created
    *
    * **Custom Domain Behavior:**
    * - If `domain` is provided without `certificate`: ACM certificate is auto-generated
@@ -683,10 +803,33 @@ export class WafHttpApi extends Construct {
       }
     }
 
-    // Generate a cryptographically strong random hex string for the secret header value.
-    // This ensures that the secret is unique and difficult to guess, enhancing security
-    // when used for origin verification.
-    this.secretHeaderValue = crypto.randomBytes(16).toString("hex");
+    // Resolve the secret value CloudFront sends to the origin for verification.
+    if (props.secretHeaderValue !== undefined) {
+      // Caller owns the secret's lifecycle. Used verbatim, so the template stays stable.
+      this.validateSecretHeaderValue(props.secretHeaderValue);
+      this.secretHeaderValue = props.secretHeaderValue;
+    } else {
+      // Default: let CloudFormation generate the value once, at creation time. It is never
+      // regenerated by a later synthesis or stack update, so the synthesized template contains
+      // only a dynamic reference and is identical across synthesises.
+      this.originSecret = new secretsmanager.Secret(
+        this,
+        "OriginVerifySecret",
+        {
+          description: `CloudFront origin verification secret for ${id}`,
+          generateSecretString: {
+            passwordLength: 32,
+            // Restrict to [A-Za-z0-9] so the value is unambiguously safe as an HTTP header value.
+            excludePunctuation: true,
+            includeSpace: false,
+          },
+          removalPolicy: RemovalPolicy.DESTROY,
+          // Deliberately no `secretName`: a physical name combined with Secrets Manager's recovery
+          // window makes a stack delete followed by a recreate fail on a name collision.
+        },
+      );
+      this.secretHeaderValue = this.originSecret.secretValue.unsafeUnwrap();
+    }
 
     // Determine which WAF rules to apply. If custom rules are provided via props, use them.
     // Otherwise, fall back to the default managed rules defined in `createDefaultRules()`.
@@ -1141,6 +1284,85 @@ export class WafHttpApi extends Construct {
         "   • Ensure no trailing dots in domain or hosted zone name\n" +
         "   • Check if you're using the correct hosted zone for your domain",
     );
+  }
+
+  /**
+   * @private
+   * @method validateSecretHeaderValue
+   * @description Validates a caller-supplied origin verification secret. Unresolved CDK tokens
+   * (Secrets Manager dynamic references, SSM parameters, CloudFormation parameters) are accepted
+   * as-is, because their value is only known at deployment time.
+   *
+   * Error messages deliberately never echo the value: unlike a domain name, this is a secret and
+   * construct errors end up in build logs.
+   *
+   * @param {string} secretHeaderValue The secret header value to validate
+   * @throws {Error} Throws an error if the value is empty, contains characters that are illegal
+   * in an HTTP header value, or exceeds the CloudFront origin custom header value limit
+   */
+  private validateSecretHeaderValue(secretHeaderValue: string): void {
+    // Deploy-time tokens are opaque placeholders at synthesis time, so none of the checks below
+    // would be measuring the real value. Accept them unchecked.
+    if (Token.isUnresolved(secretHeaderValue)) {
+      return;
+    }
+
+    if (
+      typeof secretHeaderValue !== "string" ||
+      secretHeaderValue.trim().length === 0
+    ) {
+      throw new Error(
+        "❌ Invalid secret header value: 'secretHeaderValue' must be a non-empty string.\n" +
+          `📋 Issue: An empty or whitespace-only value makes CloudFront send an empty '${WafHttpApi.SECRET_HEADER_NAME}' header, which silently disables origin verification.\n` +
+          "🔧 Solutions: Choose one of the following:\n" +
+          "   • Omit 'secretHeaderValue' to let the construct create and manage the secret\n" +
+          "   • Provide a stable, non-empty secret\n" +
+          "💡 Valid examples:\n" +
+          "   • Literal: { httpApi, secretHeaderValue: 'a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6' }\n" +
+          "   • Secrets Manager: { httpApi, secretHeaderValue: SecretValue.secretsManager('prod/api/origin-verify').unsafeUnwrap() }\n" +
+          "   • SSM parameter: { httpApi, secretHeaderValue: StringParameter.valueForStringParameter(this, '/api/origin-verify') }\n" +
+          `📝 Current value: ${
+            secretHeaderValue === null
+              ? "null"
+              : `empty or whitespace-only (type: ${typeof secretHeaderValue})`
+          }`,
+      );
+    }
+
+    // eslint-disable-next-line no-control-regex
+    const invalidCharIndex = secretHeaderValue.search(/[\x00-\x1F\x7F]/);
+    if (invalidCharIndex !== -1) {
+      throw new Error(
+        "❌ Invalid secret header value: 'secretHeaderValue' contains characters that are not allowed in an HTTP header value.\n" +
+          `📍 First invalid character at index ${invalidCharIndex} (character code ${secretHeaderValue.charCodeAt(
+            invalidCharIndex,
+          )})\n` +
+          "📋 Issue: Control characters — including carriage return and line feed — cannot be sent as a CloudFront origin custom header, and would allow header injection into origin requests.\n" +
+          "🔧 Solution: Use printable ASCII only, for example a hex or base64url encoded random value.\n" +
+          "💡 Tip: crypto.randomBytes(16).toString('hex') produces a suitable 32-character value.\n" +
+          "🔒 Note: The value is not shown here to avoid leaking your secret into build logs.",
+      );
+    }
+
+    if (secretHeaderValue.length > 1783) {
+      throw new Error(
+        "❌ Invalid secret header value: 'secretHeaderValue' exceeds the CloudFront limit for origin custom header values.\n" +
+          `📏 Current length: ${secretHeaderValue.length} characters (maximum: 1783)\n` +
+          "📋 CloudFront quota: the maximum length of an origin custom header value is 1,783 characters.\n" +
+          "🔧 Solution: Use a shorter secret — 32 hex characters (128 bits of entropy) is more than enough.\n" +
+          "🔒 Note: The value is not shown here to avoid leaking your secret into build logs.",
+      );
+    }
+
+    if (secretHeaderValue.trim().length < 16) {
+      Annotations.of(this).addWarningV2(
+        "waf-http-api:WafHttpApi.shortOriginSecret",
+        "The supplied 'secretHeaderValue' is shorter than 16 characters " +
+          `(${secretHeaderValue.trim().length}). A short origin verification secret is easier ` +
+          "to guess, which weakens the guarantee that requests reached your origin through " +
+          "CloudFront. Use at least 16 characters of random data.",
+      );
+    }
   }
 
   /**

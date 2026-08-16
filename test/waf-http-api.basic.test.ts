@@ -1,4 +1,4 @@
-import { App, Stack } from "aws-cdk-lib";
+import { App, Stack, Token } from "aws-cdk-lib";
 import { HttpApi } from "aws-cdk-lib/aws-apigatewayv2";
 import { WafHttpApi } from "../src/index";
 
@@ -27,10 +27,9 @@ describe("WafHttpApi - Basic Functionality", () => {
       // Both instances should use the same header name
       expect(WafHttpApi.SECRET_HEADER_NAME).toBe("X-Origin-Verify");
 
-      // But different secret values
+      // But each gets its own secret, so the values differ
       expect(wafApi1.secretHeaderValue).not.toBe(wafApi2.secretHeaderValue);
-      expect(wafApi1.secretHeaderValue).toHaveLength(32); // 16 bytes = 32 hex chars
-      expect(wafApi2.secretHeaderValue).toHaveLength(32);
+      expect(wafApi1.originSecret).not.toBe(wafApi2.originSecret);
     });
   });
 
@@ -49,8 +48,6 @@ describe("WafHttpApi - Basic Functionality", () => {
 
       expect(wafApi.secretHeaderValue).toBeDefined();
       expect(typeof wafApi.secretHeaderValue).toBe("string");
-      expect(wafApi.secretHeaderValue).toHaveLength(32); // 16 bytes = 32 hex chars
-      expect(wafApi.secretHeaderValue).toMatch(/^[a-f0-9]{32}$/);
     });
 
     test("should have undefined properties when not applicable", () => {
@@ -61,6 +58,39 @@ describe("WafHttpApi - Basic Functionality", () => {
       expect(wafApi.certificate).toBeUndefined();
       expect(wafApi.aRecord).toBeUndefined();
       expect(wafApi.aaaaRecord).toBeUndefined();
+    });
+  });
+
+  describe("Origin Secret Modes", () => {
+    test("should manage the origin secret by default", () => {
+      const wafApi = new WafHttpApi(stack, "TestWafApi", { httpApi });
+
+      expect(wafApi.originSecret).toBeDefined();
+      // The value is a deploy-time token, not an inspectable string.
+      expect(Token.isUnresolved(wafApi.secretHeaderValue)).toBe(true);
+    });
+
+    test("should use the provided secretHeaderValue verbatim", () => {
+      const wafApi = new WafHttpApi(stack, "TestWafApi", {
+        httpApi,
+        secretHeaderValue: "stable-origin-verify-secret-001",
+      });
+
+      expect(wafApi.secretHeaderValue).toBe("stable-origin-verify-secret-001");
+      expect(wafApi.originSecret).toBeUndefined();
+    });
+
+    test("should share the same value across instances given the same secretHeaderValue", () => {
+      const wafApi1 = new WafHttpApi(stack, "TestWafApi1", {
+        httpApi,
+        secretHeaderValue: "stable-origin-verify-secret-001",
+      });
+      const wafApi2 = new WafHttpApi(stack, "TestWafApi2", {
+        httpApi: new HttpApi(stack, "TestApi2"),
+        secretHeaderValue: "stable-origin-verify-secret-001",
+      });
+
+      expect(wafApi1.secretHeaderValue).toBe(wafApi2.secretHeaderValue);
     });
   });
 });

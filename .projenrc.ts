@@ -3,7 +3,7 @@ import { awscdk, TextFile } from "projen";
 const project = new awscdk.AwsCdkConstructLibrary({
   name: "waf-http-api",
   packageName: "waf-http-api",
-  majorVersion: 1,
+  majorVersion: 2,
   description:
     "A CDK construct that fronts an HTTP API with a CloudFront distribution and protects it with AWS WAF.",
   keywords: [
