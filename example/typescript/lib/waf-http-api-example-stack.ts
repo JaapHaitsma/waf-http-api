@@ -93,6 +93,13 @@ export class WafHttpApiExampleStack extends cdk.Stack {
       authorizer,
     });
 
+    httpApi.addRoutes({
+      path: "/hello",
+      methods: [HttpMethod.GET, HttpMethod.POST],
+      integration: lambdaIntegration,
+      authorizer,
+    });
+
     // Create the WAF-protected HTTP API using our construct
     const protectedApi = new WafHttpApi(this, "ProtectedApi", {
       httpApi: httpApi,
@@ -121,13 +128,31 @@ export class WafHttpApiExampleStack extends cdk.Stack {
       //     },
       //   },
       // ],
+      //
+      // By default the construct creates an AWS Secrets Manager secret for origin
+      // verification, so the synthesized template is identical on every synth.
+      // Supply your own value instead if you want to own its lifecycle, or to avoid
+      // the secret's monthly cost in a short-lived stack:
+      // secretHeaderValue: SecretValue.secretsManager('prod/api/origin-verify').unsafeUnwrap(),
     });
 
-    // Provide the CloudFront secret to the authorizer
+    // Provide the CloudFront secret to the authorizer. By default this is a
+    // CloudFormation dynamic reference that resolves during deployment, which works
+    // here because a Lambda environment variable is a resource property.
     authorizerLambda.addEnvironment(
       "CLOUDFRONT_SECRET",
       protectedApi.secretHeaderValue,
     );
+
+    // Alternatively, let the authorizer read the secret at runtime instead of
+    // receiving it as a plaintext environment variable:
+    // if (protectedApi.originSecret) {
+    //   protectedApi.originSecret.grantRead(authorizerLambda);
+    //   authorizerLambda.addEnvironment(
+    //     "ORIGIN_SECRET_ARN",
+    //     protectedApi.originSecret.secretArn,
+    //   );
+    // }
 
     // Output the important endpoints and information
 
@@ -151,10 +176,15 @@ export class WafHttpApiExampleStack extends cdk.Stack {
       description: "Name of the secret header added by CloudFront",
     });
 
-    new cdk.CfnOutput(this, "SecretHeaderValue", {
-      value: protectedApi.secretHeaderValue,
-      description: "Value of the secret header (for origin verification)",
-    });
+    // The secret header VALUE is deliberately not published as a stack output.
+    // By default it is a CloudFormation dynamic reference, which is only resolved in
+    // resource properties — an output would emit the literal `{{resolve:...}}` text.
+    // Stack outputs also have no `noEcho`, are returned by `cloudformation:DescribeStacks`,
+    // and are printed on `cdk deploy`.
+    //
+    // To read the value for manual testing:
+    //   aws cloudfront get-distribution-config --id <CloudFrontDistributionId> \
+    //     --query 'DistributionConfig.Origins.Items[0].CustomHeaders'
 
     // If custom domain is configured, output it
     if (protectedApi.customDomain) {

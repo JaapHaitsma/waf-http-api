@@ -112,6 +112,13 @@ def handler(event, context):
             authorizer=lambda_authorizer,
         )
 
+        http_api.add_routes(
+            path="/hello",
+            methods=[apigwv2.HttpMethod.GET, apigwv2.HttpMethod.POST],
+            integration=lambda_integration,
+            authorizer=lambda_authorizer,
+        )
+
         # Create the WAF-protected HTTP API using our construct
         protected_api = WafHttpApi(
             self, "ProtectedApi",
@@ -141,13 +148,31 @@ def handler(event, context):
             #         },
             #     },
             # ],
+            #
+            # By default the construct creates an AWS Secrets Manager secret for origin
+            # verification, so the synthesized template is identical on every synth.
+            # Supply your own value instead if you want to own its lifecycle, or to
+            # avoid the secret's monthly cost in a short-lived stack:
+            # secret_header_value=SecretValue.secrets_manager(
+            #     'prod/api/origin-verify').unsafe_unwrap(),
         )
 
-        # Provide the CloudFront secret to the authorizer
+        # Provide the CloudFront secret to the authorizer. By default this is a
+        # CloudFormation dynamic reference that resolves during deployment, which works
+        # here because a Lambda environment variable is a resource property.
         authorizer_lambda.add_environment(
             "CLOUDFRONT_SECRET",
             protected_api.secret_header_value
         )
+
+        # Alternatively, let the authorizer read the secret at runtime instead of
+        # receiving it as a plaintext environment variable:
+        # if protected_api.origin_secret:
+        #     protected_api.origin_secret.grant_read(authorizer_lambda)
+        #     authorizer_lambda.add_environment(
+        #         "ORIGIN_SECRET_ARN",
+        #         protected_api.origin_secret.secret_arn
+        #     )
 
         # Store references for outputs and tests
         self.http_api = http_api
@@ -179,11 +204,15 @@ def handler(event, context):
             description="Name of the secret header added by CloudFront"
         )
 
-        CfnOutput(
-            self, "SecretHeaderValue",
-            value=protected_api.secret_header_value,
-            description="Value of the secret header (for origin verification)"
-        )
+        # The secret header VALUE is deliberately not published as a stack output.
+        # By default it is a CloudFormation dynamic reference, which is only resolved
+        # in resource properties - an output would emit the literal `{{resolve:...}}`
+        # text. Stack outputs also have no `no_echo`, are returned by
+        # `cloudformation:DescribeStacks`, and are printed on `cdk deploy`.
+        #
+        # To read the value for manual testing:
+        #   aws cloudfront get-distribution-config --id <CloudFrontDistributionId> \
+        #     --query 'DistributionConfig.Origins.Items[0].CustomHeaders'
 
         # If custom domain is configured, output it
         if hasattr(protected_api, 'custom_domain') and protected_api.custom_domain:
