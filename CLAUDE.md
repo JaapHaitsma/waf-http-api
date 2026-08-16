@@ -1,0 +1,81 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+## What this is
+
+`waf-http-api` is a single-construct AWS CDK library, published to **npm and PyPI** from one TypeScript source via [jsii](https://github.com/aws/jsii). The construct fronts an `HttpApi` (API Gateway v2) with a CloudFront distribution, attaches a WAF WebACL, optionally manages a custom domain + ACM certificate + Route 53 records, and injects a secret origin-verification header.
+
+The project is managed by [projen](https://github.com/projen/projen): most config files are generated, not hand-written.
+
+## Commands
+
+```bash
+yarn install                 # first-time setup
+npx projen                   # regenerate project files after editing .projenrc.ts
+npx projen build             # full build: synth → compile (jsii) → docgen → test → package
+npx projen compile           # jsii compile only (src → lib/, .jsii manifest)
+npx projen test              # jest (with --updateSnapshot) + eslint
+npx projen test:watch        # jest watch mode
+npx projen eslint            # lint + autofix
+npx projen docgen            # regenerate API.md from the .jsii manifest
+```
+
+Running a single test or a single test name (bypassing the projen wrapper):
+
+```bash
+npx jest test/waf-http-api.domain.test.ts
+npx jest -t "should create A record"
+```
+
+Running eslint directly requires the legacy-config env var (eslint 9 is used in eslintrc mode):
+
+```bash
+ESLINT_USE_FLAT_CONFIG=false npx eslint --ext .ts src test
+```
+
+## Editing rules that are easy to get wrong
+
+**Generated files must not be edited by hand.** Everything marked `linguist-generated` in [.gitattributes](.gitattributes) is projen output — `package.json`, `.eslintrc.json`, `.github/workflows/*`, `.projen/*`, `tsconfig.dev.json`, `.husky/pre-commit`, `LICENSE`, `.gitignore`. Change [.projenrc.ts](.projenrc.ts) and run `npx projen` instead. Same for `lib/`, `dist/`, and `coverage/`.
+
+**`API.md` is generated too** (by `jsii-docgen` from the doc comments in `src/`). To change the published API docs, edit the TSDoc in [src/index.ts](src/index.ts) and run `npx projen docgen`. `README.md` is hand-written and is the one doc file to update manually when behaviour changes.
+
+**`package.json` version is `0.0.0` on purpose.** Versions come from git tags via the projen release workflow — never bump it manually.
+
+**PR titles must be semantic**, restricted to `feat`, `fix`, or `chore` (enforced by `.github/workflows/pull-request-lint.yml`).
+
+A husky pre-commit hook runs `lint-staged` (prettier + eslint --fix) over staged `.js/.ts/.json/.md` files.
+
+## jsii constraints on `src/`
+
+Because `src/` is compiled by jsii and cross-compiled to Python, the public API is not plain TypeScript:
+
+- Public interface properties must be `readonly`; props interfaces are exported and flat.
+- No union types, generics, tuples, or structural/anonymous types in exported signatures.
+- Only one exported entry point: `src/index.ts` is the jsii `rootDir` and `main`.
+- Doc comments are the API documentation — they end up in `API.md` and in the Python bindings, so keep the `@example` blocks accurate.
+
+`npx projen compile` (jsii) will fail on violations that plain `tsc` would accept.
+
+## Architecture
+
+Everything lives in [src/index.ts](src/index.ts) — one `WafHttpApi` construct. Constructor order matters and encodes the validation contract:
+
+1. **Domain + hosted zone validation.** If `domain` is set, `hostedZone` is **required** (hard error). Domain format is regex-validated, including wildcard rules (`*.example.com`, single leading wildcard only).
+2. **Certificate resolution.** A provided `certificate` is validated to be in `us-east-1` (parsed out of the ARN — CloudFront requirement) and checked for domain compatibility; full domain-coverage checking is impossible at synth time, so it only warns. With `domain` but no certificate, an `acm.Certificate` is auto-created with DNS validation against the hosted zone.
+3. **Mismatched props warn rather than throw**: `certificate` without `domain`, and `hostedZone` without `domain`, are both ignored with a `console.warn`. Tests assert on these warnings.
+4. **WAF WebACL** — `scope: "CLOUDFRONT"` (mandatory for CloudFront association), `defaultAction: allow`, rules from `props.wafRules` or `createDefaultRules()` (AWS managed IP-reputation + common rule set).
+5. **CloudFront distribution** — origin domain is extracted from the HTTP API URL with `Fn.select(2, Fn.split("/", props.httpApi.url!))` (token-safe, works at synth time without resolving the URL). Caching is disabled, all methods allowed, and the origin request policy is `ALL_VIEWER_EXCEPT_HOST_HEADER` so API Gateway routing still works.
+6. **Route 53 A + AAAA alias records** — created only when both `hostedZone` and `domain` are present.
+
+**Origin verification:** `WafHttpApi.SECRET_HEADER_NAME` (`X-Origin-Verify`) is a static constant; `secretHeaderValue` is `crypto.randomBytes(16)` generated at **synth time**, so it changes on every synth and is baked into the template as a CloudFront custom header. Backends compare the incoming header against this value (surfaced to Lambda via an env var in the examples).
+
+Error messages are deliberately long, emoji-prefixed, and prescriptive (issue → solution → examples). Match that style when adding validation — several tests assert on message content.
+
+## Tests
+
+`test/` is split by concern, not by file-under-test: `basic`, `waf`, `cloudfront`, `domain`, `certificate`, `hosted-zone`, `validation`, `template`. Each builds an `App`/`Stack`/`HttpApi` in `beforeEach` and asserts with `Template.fromStack(...)` from `aws-cdk-lib/assertions`. When adding behaviour, add cases to the matching concern file rather than creating a new one. Coverage is collected on every run (`coverage/`), and jest-junit writes to `test-reports/`.
+
+## `example/`
+
+[example/typescript/](example/typescript/) and [example/python/](example/python/) are standalone CDK apps that consume the **published** package from npm/PyPI — they are not wired to the local build. They are excluded from the root `tsconfig`, `tsconfig.dev`, and eslint, and have their own `package.json` / `requirements.txt` and their own `tsconfig.json` (which is why it is not projen-managed). The Python example is driven by its `Makefile` (`make install`, `make test`, `make deploy`).

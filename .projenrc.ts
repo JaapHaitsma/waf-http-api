@@ -31,7 +31,7 @@ const project = new awscdk.AwsCdkConstructLibrary({
     },
   },
 
-  gitignore: [".vscode"],
+  gitignore: [".vscode", ".DS_Store"],
 
   releaseToNpm: true,
   prettier: true,
