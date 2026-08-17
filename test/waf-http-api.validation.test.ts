@@ -413,6 +413,72 @@ describe("WafHttpApi - Validation and Error Handling", () => {
     });
   });
 
+  describe("Origin Secret Generation Validation", () => {
+    test.each([
+      ["a negative number", -1],
+      ["a fraction", 1.5],
+    ])("should throw for a generation that is %s", (_label, generation) => {
+      expect(() => {
+        new WafHttpApi(stack, "TestWafApi", {
+          httpApi,
+          originSecretGeneration: generation,
+        });
+      }).toThrow(/must be a whole number of 0 or more/);
+    });
+
+    test("should throw for a generation past the naming limit", () => {
+      // Past 9999 the '-g<n>' suffix reaches six characters, which collides with the
+      // six random characters Secrets Manager appends to the ARN.
+      expect(() => {
+        new WafHttpApi(stack, "TestWafApi", {
+          httpApi,
+          originSecretGeneration: 10000,
+        });
+      }).toThrow(/is too large/);
+    });
+
+    test.each([0, 1, 2, 9999])(
+      "should accept the valid generation %s",
+      (generation) => {
+        const s2 = new Stack(new App(), "TestStack");
+        expect(() => {
+          new WafHttpApi(s2, "TestWafApi", {
+            httpApi: new HttpApi(s2, "Api"),
+            originSecretGeneration: generation,
+          });
+        }).not.toThrow();
+      },
+    );
+
+    test("should warn when a generation is combined with secretHeaderValue", () => {
+      const warn = jest.spyOn(console, "warn").mockImplementation();
+      try {
+        new WafHttpApi(stack, "TestWafApi", {
+          httpApi,
+          secretHeaderValue: "stable-origin-verify-secret-001",
+          originSecretGeneration: 1,
+        });
+        expect(warn).toHaveBeenCalledWith(
+          expect.stringContaining("the generation will be ignored"),
+        );
+      } finally {
+        warn.mockRestore();
+      }
+    });
+
+    test("should expose only the supplied value when secretHeaderValue is used", () => {
+      const wafApi = new WafHttpApi(stack, "TestWafApi", {
+        httpApi,
+        secretHeaderValue: "stable-origin-verify-secret-001",
+      });
+
+      expect(wafApi.acceptedSecretValues).toEqual([
+        "stable-origin-verify-secret-001",
+      ]);
+      expect(wafApi.previousOriginSecret).toBeUndefined();
+    });
+  });
+
   describe("Secret Header Value Warnings", () => {
     test("should warn when the supplied secretHeaderValue is shorter than 16 characters", () => {
       new WafHttpApi(stack, "TestWafApi", {

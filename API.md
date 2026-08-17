@@ -138,18 +138,20 @@ Any object.
 
 #### Properties <a name="Properties" id="Properties"></a>
 
-| **Name**                                                                                         | **Type**                                                     | **Description**                                                                  |
-| ------------------------------------------------------------------------------------------------ | ------------------------------------------------------------ | -------------------------------------------------------------------------------- |
-| <code><a href="#waf-http-api.WafHttpApi.property.node">node</a></code>                           | <code>constructs.Node</code>                                 | The tree node.                                                                   |
-| <code><a href="#waf-http-api.WafHttpApi.property.distribution">distribution</a></code>           | <code>aws-cdk-lib.aws_cloudfront.Distribution</code>         | The CloudFront distribution created and managed by this construct.               |
-| <code><a href="#waf-http-api.WafHttpApi.property.secretHeaderValue">secretHeaderValue</a></code> | <code>string</code>                                          | The secret value CloudFront sends to the origin in the `X-Origin-Verify` header. |
-| <code><a href="#waf-http-api.WafHttpApi.property.webAclMetricName">webAclMetricName</a></code>   | <code>string</code>                                          | The CloudWatch metric name of the AWS WAF WebACL.                                |
-| <code><a href="#waf-http-api.WafHttpApi.property.aaaaRecord">aaaaRecord</a></code>               | <code>aws-cdk-lib.aws_route53.AaaaRecord</code>              | The Route 53 AAAA record created for the custom domain.                          |
-| <code><a href="#waf-http-api.WafHttpApi.property.aRecord">aRecord</a></code>                     | <code>aws-cdk-lib.aws_route53.ARecord</code>                 | The Route 53 A record created for the custom domain.                             |
-| <code><a href="#waf-http-api.WafHttpApi.property.certificate">certificate</a></code>             | <code>aws-cdk-lib.aws_certificatemanager.ICertificate</code> | The SSL certificate used for the custom domain.                                  |
-| <code><a href="#waf-http-api.WafHttpApi.property.customDomain">customDomain</a></code>           | <code>string</code>                                          | The custom domain name configured for this distribution.                         |
-| <code><a href="#waf-http-api.WafHttpApi.property.originSecret">originSecret</a></code>           | <code>aws-cdk-lib.aws_secretsmanager.ISecret</code>          | The AWS Secrets Manager secret holding the origin verification value.            |
-| <code><a href="#waf-http-api.WafHttpApi.property.webAclName">webAclName</a></code>               | <code>string</code>                                          | The name of the AWS WAF WebACL, `<stackName>-<constructId>-WebACL`.              |
+| **Name**                                                                                               | **Type**                                                     | **Description**                                                                                                                                 |
+| ------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| <code><a href="#waf-http-api.WafHttpApi.property.node">node</a></code>                                 | <code>constructs.Node</code>                                 | The tree node.                                                                                                                                  |
+| <code><a href="#waf-http-api.WafHttpApi.property.acceptedSecretValues">acceptedSecretValues</a></code> | <code>string[]</code>                                        | Every secret value your origin should accept — the value CloudFront is sending now, plus the previous generation while a rotation is in flight. |
+| <code><a href="#waf-http-api.WafHttpApi.property.distribution">distribution</a></code>                 | <code>aws-cdk-lib.aws_cloudfront.Distribution</code>         | The CloudFront distribution created and managed by this construct.                                                                              |
+| <code><a href="#waf-http-api.WafHttpApi.property.secretHeaderValue">secretHeaderValue</a></code>       | <code>string</code>                                          | The secret value CloudFront sends to the origin in the `X-Origin-Verify` header.                                                                |
+| <code><a href="#waf-http-api.WafHttpApi.property.webAclMetricName">webAclMetricName</a></code>         | <code>string</code>                                          | The CloudWatch metric name of the AWS WAF WebACL.                                                                                               |
+| <code><a href="#waf-http-api.WafHttpApi.property.aaaaRecord">aaaaRecord</a></code>                     | <code>aws-cdk-lib.aws_route53.AaaaRecord</code>              | The Route 53 AAAA record created for the custom domain.                                                                                         |
+| <code><a href="#waf-http-api.WafHttpApi.property.aRecord">aRecord</a></code>                           | <code>aws-cdk-lib.aws_route53.ARecord</code>                 | The Route 53 A record created for the custom domain.                                                                                            |
+| <code><a href="#waf-http-api.WafHttpApi.property.certificate">certificate</a></code>                   | <code>aws-cdk-lib.aws_certificatemanager.ICertificate</code> | The SSL certificate used for the custom domain.                                                                                                 |
+| <code><a href="#waf-http-api.WafHttpApi.property.customDomain">customDomain</a></code>                 | <code>string</code>                                          | The custom domain name configured for this distribution.                                                                                        |
+| <code><a href="#waf-http-api.WafHttpApi.property.originSecret">originSecret</a></code>                 | <code>aws-cdk-lib.aws_secretsmanager.ISecret</code>          | The AWS Secrets Manager secret holding the origin verification value.                                                                           |
+| <code><a href="#waf-http-api.WafHttpApi.property.previousOriginSecret">previousOriginSecret</a></code> | <code>aws-cdk-lib.aws_secretsmanager.ISecret</code>          | The previous generation of the construct-managed secret, still accepted during a rotation.                                                      |
+| <code><a href="#waf-http-api.WafHttpApi.property.webAclName">webAclName</a></code>                     | <code>string</code>                                          | The name of the AWS WAF WebACL, `<stackName>-<constructId>-WebACL`.                                                                             |
 
 ---
 
@@ -164,6 +166,43 @@ public readonly node: Node;
 The tree node.
 
 ---
+
+##### `acceptedSecretValues`<sup>Required</sup> <a name="acceptedSecretValues" id="waf-http-api.WafHttpApi.property.acceptedSecretValues"></a>
+
+```typescript
+public readonly acceptedSecretValues: string[];
+```
+
+- _Type:_ string[]
+
+Every secret value your origin should accept — the value CloudFront is sending now, plus the previous generation while a rotation is in flight.
+
+Always contains at least `secretHeaderValue`. It contains two entries when
+`originSecretGeneration` is 1 or more.
+
+**This is the property that makes rotation window-free**, and it only works if your origin uses
+it. A CloudFront distribution takes about a minute longer to update than an origin's
+environment, so during a rotation CloudFront keeps sending the previous value — which is in
+this list. Compare the incoming header against every entry, not just `secretHeaderValue`.
+
+Entries may be unresolved deploy-time tokens, so pass them into resource properties rather than
+inspecting them at synthesis. See `secretHeaderValue` for what that rules out.
+
+---
+
+_Example_
+
+```typescript
+// Node.js origin accepting either value
+myLambda.addEnvironment(
+  "ACCEPTED_ORIGIN_SECRETS",
+  wafHttpApi.acceptedSecretValues.join(","),
+);
+
+// in the handler
+const accepted = (process.env.ACCEPTED_ORIGIN_SECRETS ?? "").split(",");
+const ok = accepted.some((v) => constantTimeEqual(provided, v));
+```
 
 ##### `distribution`<sup>Required</sup> <a name="distribution" id="waf-http-api.WafHttpApi.property.distribution"></a>
 
@@ -473,6 +512,22 @@ if (wafHttpApi.originSecret) {
 }
 ```
 
+##### `previousOriginSecret`<sup>Optional</sup> <a name="previousOriginSecret" id="waf-http-api.WafHttpApi.property.previousOriginSecret"></a>
+
+```typescript
+public readonly previousOriginSecret: ISecret;
+```
+
+- _Type:_ aws-cdk-lib.aws_secretsmanager.ISecret
+
+The previous generation of the construct-managed secret, still accepted during a rotation.
+
+Defined only when `originSecretGeneration` is 1 or more — at generation 0 there is nothing to
+fall back on. It is `undefined` when `secretHeaderValue` was supplied, because the construct
+manages no secrets in that case.
+
+---
+
 ##### `webAclName`<sup>Optional</sup> <a name="webAclName" id="waf-http-api.WafHttpApi.property.webAclName"></a>
 
 ```typescript
@@ -527,14 +582,15 @@ const wafHttpApiProps: WafHttpApiProps = { ... }
 
 #### Properties <a name="Properties" id="Properties"></a>
 
-| **Name**                                                                                              | **Type**                                                     | **Description**                                                                                                                         |
-| ----------------------------------------------------------------------------------------------------- | ------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------- |
-| <code><a href="#waf-http-api.WafHttpApiProps.property.httpApi">httpApi</a></code>                     | <code>aws-cdk-lib.aws_apigatewayv2.HttpApi</code>            | The HTTP API to be protected by the WAF and CloudFront.                                                                                 |
-| <code><a href="#waf-http-api.WafHttpApiProps.property.certificate">certificate</a></code>             | <code>aws-cdk-lib.aws_certificatemanager.ICertificate</code> | Optional: SSL certificate for the custom domain.                                                                                        |
-| <code><a href="#waf-http-api.WafHttpApiProps.property.domain">domain</a></code>                       | <code>string</code>                                          | Optional: Custom domain name for the CloudFront distribution.                                                                           |
-| <code><a href="#waf-http-api.WafHttpApiProps.property.hostedZone">hostedZone</a></code>               | <code>aws-cdk-lib.aws_route53.IHostedZone</code>             | Optional: Route 53 hosted zone for automatic DNS record creation.                                                                       |
-| <code><a href="#waf-http-api.WafHttpApiProps.property.secretHeaderValue">secretHeaderValue</a></code> | <code>string</code>                                          | Optional: A fixed value for the CloudFront origin verification secret header (`WafHttpApi.SECRET_HEADER_NAME`, i.e. `X-Origin-Verify`). |
-| <code><a href="#waf-http-api.WafHttpApiProps.property.wafRules">wafRules</a></code>                   | <code>aws-cdk-lib.aws_wafv2.CfnWebACL.RuleProperty[]</code>  | Optional: Custom WAF rules to apply to the WebACL.                                                                                      |
+| **Name**                                                                                                        | **Type**                                                     | **Description**                                                                                                                         |
+| --------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------- |
+| <code><a href="#waf-http-api.WafHttpApiProps.property.httpApi">httpApi</a></code>                               | <code>aws-cdk-lib.aws_apigatewayv2.HttpApi</code>            | The HTTP API to be protected by the WAF and CloudFront.                                                                                 |
+| <code><a href="#waf-http-api.WafHttpApiProps.property.certificate">certificate</a></code>                       | <code>aws-cdk-lib.aws_certificatemanager.ICertificate</code> | Optional: SSL certificate for the custom domain.                                                                                        |
+| <code><a href="#waf-http-api.WafHttpApiProps.property.domain">domain</a></code>                                 | <code>string</code>                                          | Optional: Custom domain name for the CloudFront distribution.                                                                           |
+| <code><a href="#waf-http-api.WafHttpApiProps.property.hostedZone">hostedZone</a></code>                         | <code>aws-cdk-lib.aws_route53.IHostedZone</code>             | Optional: Route 53 hosted zone for automatic DNS record creation.                                                                       |
+| <code><a href="#waf-http-api.WafHttpApiProps.property.originSecretGeneration">originSecretGeneration</a></code> | <code>number</code>                                          | Optional: The generation of the construct-managed origin verification secret.                                                           |
+| <code><a href="#waf-http-api.WafHttpApiProps.property.secretHeaderValue">secretHeaderValue</a></code>           | <code>string</code>                                          | Optional: A fixed value for the CloudFront origin verification secret header (`WafHttpApi.SECRET_HEADER_NAME`, i.e. `X-Origin-Verify`). |
+| <code><a href="#waf-http-api.WafHttpApiProps.property.wafRules">wafRules</a></code>                             | <code>aws-cdk-lib.aws_wafv2.CfnWebACL.RuleProperty[]</code>  | Optional: Custom WAF rules to apply to the WebACL.                                                                                      |
 
 ---
 
@@ -674,6 +730,63 @@ if (protectedApi.aRecord) {
     value: protectedApi.aRecord.domainName,
   });
 }
+```
+
+##### `originSecretGeneration`<sup>Optional</sup> <a name="originSecretGeneration" id="waf-http-api.WafHttpApiProps.property.originSecretGeneration"></a>
+
+```typescript
+public readonly originSecretGeneration: number;
+```
+
+- _Type:_ number
+- _Default:_ 0 - a single secret, no previous value to fall back on
+
+Optional: The generation of the construct-managed origin verification secret.
+
+Increment it to
+rotate to a brand-new secret **without a rejection window**.
+
+The managed secret's value is generated by CloudFormation once, at creation, and is then
+deliberately stable — that is what makes deployments deterministic. There is consequently no
+way to ask for a fresh value by editing the secret in Secrets Manager: the construct references
+it with a versionless dynamic reference, and CloudFormation re-resolves a dynamic reference
+only for resources it actually updates. Writing a new value into Secrets Manager therefore
+changes nothing, and can leave consumers disagreeing if a later unrelated deployment happens to
+update only some of them.
+
+This property gives that intent somewhere to live in the template. At generation `n` the
+construct keeps **two** secrets, `n` and `n - 1`, and exposes both through
+`acceptedSecretValues`. CloudFront always sends generation `n`; your origin should accept
+either. Incrementing to `n + 1` mints a new secret, keeps generation `n` valid, and retires
+`n - 1`.
+
+That is what removes the window. A CloudFront distribution takes about a minute longer to
+update than an origin's environment, so during a rotation CloudFront keeps sending the previous
+value for a while — and here that value is still in the accepted set, so nothing is rejected.
+See "Origin Secret Stability and Rotation" in the README.
+
+**Your origin has to cooperate.** The construct can hand you both values; it cannot make your
+backend accept both. Compare the incoming header against every entry in `acceptedSecretValues`.
+
+Ignored, with a warning, when `secretHeaderValue` is supplied, because no managed secret exists
+in that case.
+
+---
+
+_Example_
+
+```typescript
+// Rotate with no rejection window: increment and deploy
+const protectedApi = new WafHttpApi(this, "MyApi", {
+  httpApi: myHttpApi,
+  originSecretGeneration: 1,
+});
+
+// Hand every accepted value to the backend
+myLambda.addEnvironment(
+  "ACCEPTED_ORIGIN_SECRETS",
+  protectedApi.acceptedSecretValues.join(","),
+);
 ```
 
 ##### `secretHeaderValue`<sup>Optional</sup> <a name="secretHeaderValue" id="waf-http-api.WafHttpApiProps.property.secretHeaderValue"></a>

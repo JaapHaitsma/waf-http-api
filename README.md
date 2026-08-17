@@ -405,6 +405,48 @@ three deployments:
    `aws cloudfront wait distribution-deployed --id <distribution-id>`.
 3. **Drop the old value.** Remove the previous secret from the origin's accepted set.
 
+#### Rotating the managed secret without a rejection window
+
+The managed secret's value is generated once and then deliberately stable. To rotate, increment
+`originSecretGeneration`:
+
+```typescript
+const protectedApi = new WafHttpApi(this, "ProtectedMyApi", {
+  httpApi: httpApi,
+  originSecretGeneration: 1, // was 0
+});
+```
+
+At generation `n` the construct keeps **two** secrets, `n` and `n - 1`, and exposes both through
+`acceptedSecretValues`. CloudFront always sends generation `n`. Incrementing to `n + 1` mints a new
+secret, keeps `n` valid, and retires `n - 1` — so while the distribution catches up and keeps
+sending the previous value, that value is still accepted. **No requests are rejected.**
+
+This is the only mechanism that works — see the note below for why editing the secret directly does
+not.
+
+**Your origin has to accept every value.** The construct can hand you both; it cannot change your
+backend. Pass the whole list and compare against all of it:
+
+```typescript
+myLambda.addEnvironment(
+  "ACCEPTED_ORIGIN_SECRETS",
+  protectedApi.acceptedSecretValues.join(","),
+);
+```
+
+```typescript
+const accepted = (process.env.ACCEPTED_ORIGIN_SECRETS ?? "").split(",");
+const ok = accepted.some((v) => constantTimeEqual(provided, v));
+```
+
+Roll one generation at a time and let each deployment finish before starting the next. Jumping from
+`n` to `n + 2` retires the value CloudFront is still sending, which reopens the window this is meant
+to close.
+
+Two secrets exist at any time, so the cost is about $0.80 per month rather than $0.40. That is
+inherent to accepting two values, not an overhead of this design.
+
 Note that rotating a Secrets Manager secret **on its own does not update the distribution**:
 CloudFormation re-resolves a dynamic reference only for resources it actually updates during a stack
 operation, and an otherwise unchanged distribution is not updated. Roll the value through a stack

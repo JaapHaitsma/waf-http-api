@@ -104,7 +104,7 @@ describe("WafHttpApi - CloudFront Configuration", () => {
         "AWS::SecretsManager::Secret",
         {
           Description:
-            "CloudFront origin verification secret for TestStack/ProtectedApi",
+            "CloudFront origin verification secret (generation 0) for TestStack/ProtectedApi",
         },
       );
     });
@@ -121,9 +121,101 @@ describe("WafHttpApi - CloudFront Configuration", () => {
       );
       const secret = Object.values(secrets)[0];
       expect(secret.Properties.Name).toBe(
-        "TestStack-ProtectedApi-VerificationSecret",
+        "TestStack-ProtectedApi-VerificationSecret-g0",
       );
       expect(secret.DeletionPolicy).toBe("Delete");
+    });
+
+    test("should create one secret and no previous at generation 0", () => {
+      const wafApi = new WafHttpApi(stack, "ProtectedApi", { httpApi });
+
+      const template = Template.fromStack(stack);
+      template.resourceCountIs("AWS::SecretsManager::Secret", 1);
+      template.hasResourceProperties("AWS::SecretsManager::Secret", {
+        Name: "TestStack-ProtectedApi-VerificationSecret-g0",
+      });
+      expect(wafApi.previousOriginSecret).toBeUndefined();
+      expect(wafApi.acceptedSecretValues).toHaveLength(1);
+      expect(wafApi.acceptedSecretValues[0]).toBe(wafApi.secretHeaderValue);
+    });
+
+    test("should keep the previous generation alongside the current one", () => {
+      const s2 = new Stack(new App(), "TestStack");
+      const wafApi = new WafHttpApi(s2, "ProtectedApi", {
+        httpApi: new HttpApi(s2, "Api"),
+        originSecretGeneration: 2,
+      });
+
+      const template = Template.fromStack(s2);
+      template.resourceCountIs("AWS::SecretsManager::Secret", 2);
+      template.hasResourceProperties("AWS::SecretsManager::Secret", {
+        Name: "TestStack-ProtectedApi-VerificationSecret-g2",
+      });
+      template.hasResourceProperties("AWS::SecretsManager::Secret", {
+        Name: "TestStack-ProtectedApi-VerificationSecret-g1",
+      });
+
+      expect(wafApi.previousOriginSecret).toBeDefined();
+      expect(wafApi.acceptedSecretValues).toHaveLength(2);
+      // CloudFront sends the current generation; both are accepted.
+      expect(wafApi.acceptedSecretValues[0]).toBe(wafApi.secretHeaderValue);
+      expect(wafApi.acceptedSecretValues[1]).not.toBe(wafApi.secretHeaderValue);
+    });
+
+    test("should send the current generation from CloudFront", () => {
+      const s2 = new Stack(new App(), "TestStack");
+      new WafHttpApi(s2, "ProtectedApi", {
+        httpApi: new HttpApi(s2, "Api"),
+        originSecretGeneration: 1,
+      });
+
+      const template = Template.fromStack(s2);
+      const currentLogicalId = Object.entries(
+        template.findResources("AWS::SecretsManager::Secret"),
+      ).find(
+        ([, r]) =>
+          r.Properties.Name === "TestStack-ProtectedApi-VerificationSecret-g1",
+      )![0];
+
+      const origin = Object.values(
+        template.findResources("AWS::CloudFront::Distribution"),
+      )[0].Properties.DistributionConfig.Origins[0];
+      expect(origin.OriginCustomHeaders[0].HeaderValue).toEqual({
+        "Fn::Join": [
+          "",
+          [
+            "{{resolve:secretsmanager:",
+            { Ref: currentLogicalId },
+            ":SecretString:::}}",
+          ],
+        ],
+      });
+    });
+
+    test("should carry the rotation forward when the generation increments", () => {
+      // g1 must survive the bump to g2 - that is what keeps the old value accepted while the
+      // distribution catches up - and g0 must be retired.
+      const names = (generation: number) => {
+        const s2 = new Stack(new App(), "TestStack");
+        new WafHttpApi(s2, "ProtectedApi", {
+          httpApi: new HttpApi(s2, "Api"),
+          originSecretGeneration: generation,
+        });
+        return Object.values(
+          Template.fromStack(s2).findResources("AWS::SecretsManager::Secret"),
+        )
+          .map((r) => r.Properties.Name)
+          .sort();
+      };
+
+      expect(names(1)).toEqual([
+        "TestStack-ProtectedApi-VerificationSecret-g0",
+        "TestStack-ProtectedApi-VerificationSecret-g1",
+      ]);
+      expect(names(2)).toEqual([
+        "TestStack-ProtectedApi-VerificationSecret-g1",
+        "TestStack-ProtectedApi-VerificationSecret-g2",
+      ]);
     });
 
     test("should not end the secret name with a hyphen and six characters", () => {
@@ -134,9 +226,9 @@ describe("WafHttpApi - CloudFront Configuration", () => {
       const secrets = Template.fromStack(stack).findResources(
         "AWS::SecretsManager::Secret",
       );
-      expect(Object.values(secrets)[0].Properties.Name).not.toMatch(
-        /-[A-Za-z0-9]{6}$/,
-      );
+      for (const secret of Object.values(secrets)) {
+        expect(secret.Properties.Name).not.toMatch(/-[A-Za-z0-9]{6}$/);
+      }
     });
 
     test("should label the distribution with a comment, which is its only readable identifier", () => {
