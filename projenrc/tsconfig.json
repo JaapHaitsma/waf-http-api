@@ -5,6 +5,11 @@
     "noEmit": true,
     "rootDir": ".."
   },
-  "include": ["**/*.ts", "../.projenrc.ts"],
-  "exclude": ["node_modules"]
+  "include": [
+    "**/*.ts",
+    "../.projenrc.ts"
+  ],
+  "exclude": [
+    "node_modules"
+  ]
 }

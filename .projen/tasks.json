@@ -137,7 +137,11 @@
       "description": "Generate API.md from .jsii manifest",
       "steps": [
         {
-          "execArgs": ["jsii-docgen", "-o", "API.md"]
+          "execArgs": [
+            "jsii-docgen",
+            "-o",
+            "API.md"
+          ]
         }
       ]
     },
@@ -216,7 +220,12 @@
       "description": "Create js language bindings",
       "steps": [
         {
-          "execArgs": ["jsii-pacmak", "-v", "--target", "js"]
+          "execArgs": [
+            "jsii-pacmak",
+            "-v",
+            "--target",
+            "js"
+          ]
         }
       ]
     },
@@ -225,7 +234,12 @@
       "description": "Create python language bindings",
       "steps": [
         {
-          "execArgs": ["jsii-pacmak", "-v", "--target", "python"]
+          "execArgs": [
+            "jsii-pacmak",
+            "-v",
+            "--target",
+            "python"
+          ]
         }
       ]
     },

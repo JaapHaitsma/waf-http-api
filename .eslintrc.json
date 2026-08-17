@@ -5,20 +5,31 @@
     "node": true
   },
   "root": true,
-  "plugins": ["@typescript-eslint", "import"],
+  "plugins": [
+    "@typescript-eslint",
+    "import"
+  ],
   "parser": "@typescript-eslint/parser",
   "parserOptions": {
     "ecmaVersion": 2018,
     "sourceType": "module",
     "projectService": {
-      "allowDefaultProject": [".projenrc.ts"],
+      "allowDefaultProject": [
+        ".projenrc.ts"
+      ],
       "defaultProject": "./tsconfig.json"
     }
   },
-  "extends": ["plugin:import/typescript", "plugin:prettier/recommended"],
+  "extends": [
+    "plugin:import/typescript",
+    "plugin:prettier/recommended"
+  ],
   "settings": {
     "import/parsers": {
-      "@typescript-eslint/parser": [".ts", ".tsx"]
+      "@typescript-eslint/parser": [
+        ".ts",
+        ".tsx"
+      ]
     },
     "import/resolver": {
       "node": {},
@@ -38,7 +49,11 @@
     "!projenrc/**/*.ts"
   ],
   "rules": {
-    "curly": ["error", "multi-line", "consistent"],
+    "curly": [
+      "error",
+      "multi-line",
+      "consistent"
+    ],
     "@typescript-eslint/no-require-imports": "error",
     "import/no-extraneous-dependencies": [
       "error",
@@ -53,25 +68,40 @@
         "peerDependencies": true
       }
     ],
-    "import/no-unresolved": ["error"],
+    "import/no-unresolved": [
+      "error"
+    ],
     "import/order": [
       "warn",
       {
-        "groups": ["builtin", "external"],
+        "groups": [
+          "builtin",
+          "external"
+        ],
         "alphabetize": {
           "order": "asc",
           "caseInsensitive": true
         }
       }
     ],
-    "import/no-duplicates": ["error"],
-    "no-shadow": ["off"],
+    "import/no-duplicates": [
+      "error"
+    ],
+    "no-shadow": [
+      "off"
+    ],
     "@typescript-eslint/no-shadow": "error",
     "@typescript-eslint/no-floating-promises": "error",
-    "no-return-await": ["off"],
+    "no-return-await": [
+      "off"
+    ],
     "@typescript-eslint/return-await": "error",
-    "dot-notation": ["error"],
-    "no-bitwise": ["error"],
+    "dot-notation": [
+      "error"
+    ],
+    "no-bitwise": [
+      "error"
+    ],
     "@typescript-eslint/member-ordering": [
       "error",
       {
@@ -91,7 +121,9 @@
   },
   "overrides": [
     {
-      "files": [".projenrc.ts"],
+      "files": [
+        ".projenrc.ts"
+      ],
       "rules": {
         "@typescript-eslint/no-require-imports": "off",
         "import/no-extraneous-dependencies": "off"
