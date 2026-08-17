@@ -21,13 +21,15 @@ const project = new awscdk.AwsCdkConstructLibrary({
   license: "MIT",
   cdkVersion: "2.200.2",
   defaultReleaseBranch: "main",
-  jsiiVersion: "~5.8.0",
+  jsiiVersion: "~6.0.0",
   jest: true,
   projenrcTs: true,
   repositoryUrl: "https://github.com/JaapHaitsma/waf-http-api.git",
+  // Weekly dependency upgrade PRs. This was disabled, which is how jsii drifted onto an
+  // End-of-Support release line without anything flagging it.
   depsUpgradeOptions: {
     workflowOptions: {
-      schedule: { cron: [] }, // Keep a schedule, or set to empty array to disable
+      schedule: { cron: ["0 4 * * 1"] }, // Mondays, 04:00 UTC
     },
   },
 

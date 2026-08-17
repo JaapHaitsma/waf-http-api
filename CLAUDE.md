@@ -36,7 +36,7 @@ ESLINT_USE_FLAT_CONFIG=false npx eslint --ext .ts src test
 
 ## Editing rules that are easy to get wrong
 
-**Generated files must not be edited by hand.** Everything marked `linguist-generated` in [.gitattributes](.gitattributes) is projen output — `package.json`, `.eslintrc.json`, `.github/workflows/*`, `.projen/*`, `tsconfig.dev.json`, `.husky/pre-commit`, `LICENSE`, `.gitignore`. Change [.projenrc.ts](.projenrc.ts) and run `npx projen` instead. Same for `lib/`, `dist/`, and `coverage/`.
+**Generated files must not be edited by hand.** Everything marked `linguist-generated` in [.gitattributes](.gitattributes) is projen output — `package.json`, `.eslintrc.json`, `.github/workflows/*`, `.projen/*`, `tsconfig.json`, `test/tsconfig.json`, `projenrc/tsconfig.json`, `.husky/pre-commit`, `LICENSE`, `.gitignore`. Change [.projenrc.ts](.projenrc.ts) and run `npx projen` instead. Same for `lib/`, `dist/`, and `coverage/`.
 
 **`API.md` is generated too** (by `jsii-docgen` from the doc comments in `src/`). To change the published API docs, edit the TSDoc in [src/index.ts](src/index.ts) and run `npx projen docgen`. `README.md` is hand-written and is the one doc file to update manually when behaviour changes.
 

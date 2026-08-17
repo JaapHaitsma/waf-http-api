@@ -20,7 +20,7 @@
     "@typescript-eslint/parser": "^8",
     "aws-cdk-lib": "2.200.2",
     "commit-and-tag-version": "^12",
-    "constructs": "10.0.5",
+    "constructs": "10.5.1",
     "eslint": "^9",
     "eslint-config-prettier": "^10.1.5",
     "eslint-import-resolver-typescript": "^4.4.3",
@@ -28,22 +28,22 @@
     "eslint-plugin-prettier": "^5.4.1",
     "husky": "^9.1.7",
     "jest": "^30.0.4",
-    "jest-junit": "^16",
-    "jsii": "~5.8.0",
+    "jest-junit": "^17",
+    "jsii": "~6.0.0",
     "jsii-diff": "^1.112.0",
     "jsii-docgen": "^10.5.0",
     "jsii-pacmak": "^1.112.0",
-    "jsii-rosetta": "~5.8.0",
+    "jsii-rosetta": "~6.0.0",
     "lint-staged": "^16.1.2",
     "prettier": "^3.5.3",
-    "projen": "^0.93.0",
+    "projen": "^0.101.31",
     "ts-jest": "^29.4.0",
     "ts-node": "^10.9.2",
     "typescript": "^5.8.3"
   },
   "peerDependencies": {
     "aws-cdk-lib": "^2.200.2",
-    "constructs": "^10.0.5"
+    "constructs": "^10.5.1"
   },
   "keywords": [
     "api-gateway",
@@ -56,6 +56,7 @@
   ],
   "main": "lib/index.js",
   "license": "MIT",
+  "stability": "stable",
   "publishConfig": {
     "access": "public"
   },
@@ -100,13 +101,12 @@
       "^.+\\.[t]sx?$": [
         "ts-jest",
         {
-          "tsconfig": "tsconfig.dev.json"
+          "tsconfig": "test/tsconfig.json"
         }
       ]
     }
   },
   "types": "lib/index.d.ts",
-  "stability": "stable",
   "jsii": {
     "outdir": "dist",
     "targets": {
@@ -115,10 +115,8 @@
         "module": "waf_http_api"
       }
     },
-    "tsc": {
-      "outDir": "lib",
-      "rootDir": "src"
-    }
+    "tsconfig": "tsconfig.json",
+    "validateTsconfig": "strict"
   },
   "lint-staged": {
     "*.{js,ts,json,md}": [
