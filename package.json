@@ -20,7 +20,7 @@
     "@typescript-eslint/parser": "^8",
     "aws-cdk-lib": "2.200.2",
     "commit-and-tag-version": "^12",
-    "constructs": "10.5.1",
+    "constructs": "10.0.5",
     "eslint": "^9",
     "eslint-config-prettier": "^10.1.8",
     "eslint-import-resolver-typescript": "^4.4.5",
@@ -43,7 +43,7 @@
   },
   "peerDependencies": {
     "aws-cdk-lib": "^2.200.2",
-    "constructs": "^10.5.1"
+    "constructs": "^10.0.5"
   },
   "keywords": [
     "api-gateway",

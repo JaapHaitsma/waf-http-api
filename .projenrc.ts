@@ -20,6 +20,10 @@ const project = new awscdk.AwsCdkConstructLibrary({
   copyrightOwner: "Merapar Technologies Group B.V.",
   license: "MIT",
   cdkVersion: "2.200.2",
+  // Pin the constructs floor to what v1 published. projen 0.101 wants constructs ^10.5.0
+  // for its own use, and letting that leak into peerDependencies would break every
+  // consumer pinned below 10.5.1 - including this repo's own example.
+  constructsVersion: "10.0.5",
   defaultReleaseBranch: "main",
   jsiiVersion: "~6.0.0",
   // Match the TypeScript that jsii itself compiles with (it pins ~6.0), so the dev-time
