@@ -78,6 +78,11 @@ The properties required to configure this construct, including the target HTTP A
 - `wafRules` (optional): Custom WAF rules, defaults to AWS managed rules
 - `domain` (optional): Custom domain name for the CloudFront distribution
 - `certificate` (optional): SSL certificate for the custom domain (must be in us-east-1)
+- `secretHeaderValue` (optional): Bring your own origin verification secret
+
+**Origin Verification Secret Behavior:**
+- If not provided: a Secrets Manager secret is created and referenced (deterministic)
+- If provided: that value is used verbatim and no Secrets Manager secret is created
 
 **Custom Domain Behavior:**
 - If `domain` is provided without `certificate`: ACM certificate is auto-generated
@@ -92,6 +97,7 @@ The properties required to configure this construct, including the target HTTP A
 | **Name** | **Description** |
 | --- | --- |
 | <code><a href="#waf-http-api.WafHttpApi.toString">toString</a></code> | Returns a string representation of this construct. |
+| <code><a href="#waf-http-api.WafHttpApi.with">with</a></code> | Applies one or more mixins to this construct. |
 
 ---
 
@@ -103,6 +109,27 @@ public toString(): string
 
 Returns a string representation of this construct.
 
+##### `with` <a name="with" id="waf-http-api.WafHttpApi.with"></a>
+
+```typescript
+public with(mixins: ...IMixin[]): IConstruct
+```
+
+Applies one or more mixins to this construct.
+
+Mixins are applied in order. The list of constructs is captured at the
+start of the call, so constructs added by a mixin will not be visited.
+Use multiple `with()` calls if subsequent mixins should apply to added
+constructs.
+
+###### `mixins`<sup>Required</sup> <a name="mixins" id="waf-http-api.WafHttpApi.with.parameter.mixins"></a>
+
+- *Type:* ...constructs.IMixin[]
+
+The mixins to apply.
+
+---
+
 #### Static Functions <a name="Static Functions" id="Static Functions"></a>
 
 | **Name** | **Description** |
@@ -111,7 +138,7 @@ Returns a string representation of this construct.
 
 ---
 
-##### ~~`isConstruct`~~ <a name="isConstruct" id="waf-http-api.WafHttpApi.isConstruct"></a>
+##### `isConstruct` <a name="isConstruct" id="waf-http-api.WafHttpApi.isConstruct"></a>
 
 ```typescript
 import { WafHttpApi } from 'waf-http-api'
@@ -120,6 +147,20 @@ WafHttpApi.isConstruct(x: any)
 ```
 
 Checks if `x` is a construct.
+
+Use this method instead of `instanceof` to properly detect `Construct`
+instances, even when the construct library is symlinked.
+
+Explanation: in JavaScript, multiple copies of the `constructs` library on
+disk are seen as independent, completely different libraries. As a
+consequence, the class `Construct` in each copy of the `constructs` library
+is seen as a different class, and an instance of one class will not test as
+`instanceof` the other class. `npm install` will not create installations
+like this, but users may manually symlink construct libraries together or
+use a monorepo tool: in those cases, multiple copies of the `constructs`
+library can be accidentally installed, and `instanceof` will behave
+unpredictably. It is safest to avoid using `instanceof`, and using
+this type-testing method instead.
 
 ###### `x`<sup>Required</sup> <a name="x" id="waf-http-api.WafHttpApi.isConstruct.parameter.x"></a>
 
@@ -134,12 +175,17 @@ Any object.
 | **Name** | **Type** | **Description** |
 | --- | --- | --- |
 | <code><a href="#waf-http-api.WafHttpApi.property.node">node</a></code> | <code>constructs.Node</code> | The tree node. |
+| <code><a href="#waf-http-api.WafHttpApi.property.acceptedSecretValues">acceptedSecretValues</a></code> | <code>string[]</code> | Every secret value your origin should accept — the value CloudFront is sending now, plus the previous generation while a rotation is in flight. |
 | <code><a href="#waf-http-api.WafHttpApi.property.distribution">distribution</a></code> | <code>aws-cdk-lib.aws_cloudfront.Distribution</code> | The CloudFront distribution created and managed by this construct. |
-| <code><a href="#waf-http-api.WafHttpApi.property.secretHeaderValue">secretHeaderValue</a></code> | <code>string</code> | The randomly generated secret value for the custom header. |
+| <code><a href="#waf-http-api.WafHttpApi.property.secretHeaderValue">secretHeaderValue</a></code> | <code>string</code> | The secret value CloudFront sends to the origin in the `X-Origin-Verify` header. |
+| <code><a href="#waf-http-api.WafHttpApi.property.webAclMetricName">webAclMetricName</a></code> | <code>string</code> | The CloudWatch metric name of the AWS WAF WebACL. |
 | <code><a href="#waf-http-api.WafHttpApi.property.aaaaRecord">aaaaRecord</a></code> | <code>aws-cdk-lib.aws_route53.AaaaRecord</code> | The Route 53 AAAA record created for the custom domain. |
 | <code><a href="#waf-http-api.WafHttpApi.property.aRecord">aRecord</a></code> | <code>aws-cdk-lib.aws_route53.ARecord</code> | The Route 53 A record created for the custom domain. |
 | <code><a href="#waf-http-api.WafHttpApi.property.certificate">certificate</a></code> | <code>aws-cdk-lib.aws_certificatemanager.ICertificate</code> | The SSL certificate used for the custom domain. |
 | <code><a href="#waf-http-api.WafHttpApi.property.customDomain">customDomain</a></code> | <code>string</code> | The custom domain name configured for this distribution. |
+| <code><a href="#waf-http-api.WafHttpApi.property.originSecret">originSecret</a></code> | <code>aws-cdk-lib.aws_secretsmanager.ISecret</code> | The AWS Secrets Manager secret holding the origin verification value. |
+| <code><a href="#waf-http-api.WafHttpApi.property.previousOriginSecret">previousOriginSecret</a></code> | <code>aws-cdk-lib.aws_secretsmanager.ISecret</code> | The previous generation of the construct-managed secret, still accepted during a rotation. |
+| <code><a href="#waf-http-api.WafHttpApi.property.webAclName">webAclName</a></code> | <code>string</code> | The name of the AWS WAF WebACL, `<stackName>-<constructId>-WebACL`. |
 
 ---
 
@@ -154,6 +200,44 @@ public readonly node: Node;
 The tree node.
 
 ---
+
+##### `acceptedSecretValues`<sup>Required</sup> <a name="acceptedSecretValues" id="waf-http-api.WafHttpApi.property.acceptedSecretValues"></a>
+
+```typescript
+public readonly acceptedSecretValues: string[];
+```
+
+- *Type:* string[]
+
+Every secret value your origin should accept — the value CloudFront is sending now, plus the previous generation while a rotation is in flight.
+
+Always contains at least `secretHeaderValue`. It contains two entries when
+`originSecretGeneration` is 1 or more.
+
+**This is the property that makes rotation window-free**, and it only works if your origin uses
+it. A CloudFront distribution takes about a minute longer to update than an origin's
+environment, so during a rotation CloudFront keeps sending the previous value — which is in
+this list. Compare the incoming header against every entry, not just `secretHeaderValue`.
+
+Entries may be unresolved deploy-time tokens, so pass them into resource properties rather than
+inspecting them at synthesis. See `secretHeaderValue` for what that rules out.
+
+---
+
+*Example*
+
+```typescript
+// Node.js origin accepting either value
+myLambda.addEnvironment(
+  'ACCEPTED_ORIGIN_SECRETS',
+  wafHttpApi.acceptedSecretValues.join(','),
+);
+
+// in the handler
+const accepted = (process.env.ACCEPTED_ORIGIN_SECRETS ?? '').split(',');
+const ok = accepted.some((v) => constantTimeEqual(provided, v));
+```
+
 
 ##### `distribution`<sup>Required</sup> <a name="distribution" id="waf-http-api.WafHttpApi.property.distribution"></a>
 
@@ -194,11 +278,23 @@ public readonly secretHeaderValue: string;
 
 - *Type:* string
 
-The randomly generated secret value for the custom header.
+The secret value CloudFront sends to the origin in the `X-Origin-Verify` header.
 
-This value is unique for each deployment of the construct and should be used
-in your HTTP API's authorizer or backend logic to validate that requests
-are coming through CloudFront and not directly from the internet.
+Use it in your HTTP API's authorizer or backend logic to validate that requests are coming
+through CloudFront and not directly from the internet.
+
+What this holds depends on how the construct was configured:
+
+- **By default** it is an unresolved CloudFormation dynamic reference to the secret in
+  `originSecret`, resolved at deployment time.
+- **With the `secretHeaderValue` prop** it is exactly the value you supplied.
+
+**This may therefore be an unresolved token.** A token can be passed into any resource
+property — a Lambda environment variable, another construct's props — and CloudFormation
+resolves it during deployment. It cannot be inspected at synthesis time: `.length`,
+`.substring()` and string comparisons on it are meaningless, and it must **not** be published
+through `CfnOutput`, because dynamic references are resolved in resource properties only and a
+stack output would emit the literal `{{resolve:...}}` text.
 
 ---
 
@@ -217,11 +313,44 @@ export const handler = async (event: APIGatewayProxyEvent) => {
   // Continue with request processing...
 };
 
-// Set as environment variable in Lambda
+// Set as environment variable in Lambda. This works for every configuration, including an
+// unresolved token: CloudFormation resolves it into the function's environment on deploy.
 const lambda = new NodejsFunction(this, 'ApiHandler', {
   environment: {
     CLOUDFRONT_SECRET: wafHttpApi.secretHeaderValue
   }
+});
+```
+
+
+##### `webAclMetricName`<sup>Required</sup> <a name="webAclMetricName" id="waf-http-api.WafHttpApi.property.webAclMetricName"></a>
+
+```typescript
+public readonly webAclMetricName: string;
+```
+
+- *Type:* string
+
+The CloudWatch metric name of the AWS WAF WebACL.
+
+Unlike the physical name, CloudFormation cannot generate this — it is a required property with
+no default — so the construct sets it to `<stackName>-<constructId>-WebACL`. That keeps metrics
+from two stacks apart even when they reuse the same construct id.
+
+---
+
+*Example*
+
+```typescript
+// Alarm on blocked requests for this specific WebACL
+new Metric({
+  namespace: 'AWS/WAFV2',
+  metricName: 'BlockedRequests',
+  dimensionsMap: {
+    WebACL: wafHttpApi.webAclMetricName,
+    Rule: 'ALL',
+    Region: 'global',
+  },
 });
 ```
 
@@ -391,6 +520,78 @@ if (wafHttpApi.customDomain) {
 ```
 
 
+##### `originSecret`<sup>Optional</sup> <a name="originSecret" id="waf-http-api.WafHttpApi.property.originSecret"></a>
+
+```typescript
+public readonly originSecret: ISecret;
+```
+
+- *Type:* aws-cdk-lib.aws_secretsmanager.ISecret
+
+The AWS Secrets Manager secret holding the origin verification value.
+
+This property is defined only when the construct manages the secret itself, which is the
+default. It is `undefined` when `secretHeaderValue` was supplied.
+
+Use it to grant an origin Lambda read access so it can fetch the value at runtime instead of
+receiving it as a plaintext environment variable. That also lets the origin accept both
+`AWSCURRENT` and `AWSPREVIOUS` during a rotation, which avoids the rejection window that a
+distribution update would otherwise open.
+
+---
+
+*Example*
+
+```typescript
+// Let the origin read the secret at runtime rather than baking it into the environment
+if (wafHttpApi.originSecret) {
+  wafHttpApi.originSecret.grantRead(myLambda);
+  myLambda.addEnvironment(
+    'ORIGIN_SECRET_ARN',
+    wafHttpApi.originSecret.secretArn,
+  );
+}
+```
+
+
+##### `previousOriginSecret`<sup>Optional</sup> <a name="previousOriginSecret" id="waf-http-api.WafHttpApi.property.previousOriginSecret"></a>
+
+```typescript
+public readonly previousOriginSecret: ISecret;
+```
+
+- *Type:* aws-cdk-lib.aws_secretsmanager.ISecret
+
+The previous generation of the construct-managed secret, still accepted during a rotation.
+
+Defined only when `originSecretGeneration` is 1 or more — at generation 0 there is nothing to
+fall back on. It is `undefined` when `secretHeaderValue` was supplied, because the construct
+manages no secrets in that case.
+
+---
+
+##### `webAclName`<sup>Optional</sup> <a name="webAclName" id="waf-http-api.WafHttpApi.property.webAclName"></a>
+
+```typescript
+public readonly webAclName: string;
+```
+
+- *Type:* string
+
+The name of the AWS WAF WebACL, `<stackName>-<constructId>-WebACL`.
+
+The construct always names the WebACL itself. CloudFormation's generated name for this
+resource type carries no stack name — an unnamed WebACL in `AppStack` deploys as
+`ProtectedApiWebAcl<hash>-<random>` — so the console cannot tell you which deployment it
+belongs to.
+
+This is `undefined` only when the stack name is an unresolved token, as inside a `NestedStack`,
+where it cannot be sanitized at synthesis. CloudFormation then generates the name.
+
+The same string is used as the CloudWatch metric name, exposed as `webAclMetricName`.
+
+---
+
 #### Constants <a name="Constants" id="Constants"></a>
 
 | **Name** | **Type** | **Description** |
@@ -429,6 +630,8 @@ const wafHttpApiProps: WafHttpApiProps = { ... }
 | <code><a href="#waf-http-api.WafHttpApiProps.property.certificate">certificate</a></code> | <code>aws-cdk-lib.aws_certificatemanager.ICertificate</code> | Optional: SSL certificate for the custom domain. |
 | <code><a href="#waf-http-api.WafHttpApiProps.property.domain">domain</a></code> | <code>string</code> | Optional: Custom domain name for the CloudFront distribution. |
 | <code><a href="#waf-http-api.WafHttpApiProps.property.hostedZone">hostedZone</a></code> | <code>aws-cdk-lib.aws_route53.IHostedZone</code> | Optional: Route 53 hosted zone for automatic DNS record creation. |
+| <code><a href="#waf-http-api.WafHttpApiProps.property.originSecretGeneration">originSecretGeneration</a></code> | <code>number</code> | Optional: The generation of the construct-managed origin verification secret. |
+| <code><a href="#waf-http-api.WafHttpApiProps.property.secretHeaderValue">secretHeaderValue</a></code> | <code>string</code> | Optional: A fixed value for the CloudFront origin verification secret header (`WafHttpApi.SECRET_HEADER_NAME`, i.e. `X-Origin-Verify`). |
 | <code><a href="#waf-http-api.WafHttpApiProps.property.wafRules">wafRules</a></code> | <code>aws-cdk-lib.aws_wafv2.CfnWebACL.RuleProperty[]</code> | Optional: Custom WAF rules to apply to the WebACL. |
 
 ---
@@ -569,6 +772,132 @@ if (protectedApi.aRecord) {
     value: protectedApi.aRecord.domainName
   });
 }
+```
+
+
+##### `originSecretGeneration`<sup>Optional</sup> <a name="originSecretGeneration" id="waf-http-api.WafHttpApiProps.property.originSecretGeneration"></a>
+
+```typescript
+public readonly originSecretGeneration: number;
+```
+
+- *Type:* number
+- *Default:* 0 - a single secret, no previous value to fall back on
+
+Optional: The generation of the construct-managed origin verification secret.
+
+Increment it to
+rotate to a brand-new secret **without a rejection window**.
+
+The managed secret's value is generated by CloudFormation once, at creation, and is then
+deliberately stable — that is what makes deployments deterministic. There is consequently no
+way to ask for a fresh value by editing the secret in Secrets Manager: the construct references
+it with a versionless dynamic reference, and CloudFormation re-resolves a dynamic reference
+only for resources it actually updates. Writing a new value into Secrets Manager therefore
+changes nothing, and can leave consumers disagreeing if a later unrelated deployment happens to
+update only some of them.
+
+This property gives that intent somewhere to live in the template. At generation `n` the
+construct keeps **two** secrets, `n` and `n - 1`, and exposes both through
+`acceptedSecretValues`. CloudFront always sends generation `n`; your origin should accept
+either. Incrementing to `n + 1` mints a new secret, keeps generation `n` valid, and retires
+`n - 1`.
+
+That is what removes the window. A CloudFront distribution takes about a minute longer to
+update than an origin's environment, so during a rotation CloudFront keeps sending the previous
+value for a while — and here that value is still in the accepted set, so nothing is rejected.
+See "Origin Secret Stability and Rotation" in the README.
+
+**Your origin has to cooperate.** The construct can hand you both values; it cannot make your
+backend accept both. Compare the incoming header against every entry in `acceptedSecretValues`.
+
+Ignored, with a warning, when `secretHeaderValue` is supplied, because no managed secret exists
+in that case.
+
+---
+
+*Example*
+
+```typescript
+// Rotate with no rejection window: increment and deploy
+const protectedApi = new WafHttpApi(this, 'MyApi', {
+  httpApi: myHttpApi,
+  originSecretGeneration: 1,
+});
+
+// Hand every accepted value to the backend
+myLambda.addEnvironment(
+  'ACCEPTED_ORIGIN_SECRETS',
+  protectedApi.acceptedSecretValues.join(','),
+);
+```
+
+
+##### `secretHeaderValue`<sup>Optional</sup> <a name="secretHeaderValue" id="waf-http-api.WafHttpApiProps.property.secretHeaderValue"></a>
+
+```typescript
+public readonly secretHeaderValue: string;
+```
+
+- *Type:* string
+- *Default:* An AWS Secrets Manager secret created and managed by the construct, exposed as `originSecret`
+
+Optional: A fixed value for the CloudFront origin verification secret header (`WafHttpApi.SECRET_HEADER_NAME`, i.e. `X-Origin-Verify`).
+
+Provide this when you want to own the secret's lifecycle yourself instead of letting the
+construct manage it. When omitted, the construct creates an AWS Secrets Manager secret whose
+value is generated **by CloudFormation at creation time** and references it from the origin
+custom header. That is the recommended default: the template then contains only a dynamic
+reference, so synthesis is deterministic and a no-op deployment is a no-op diff. The generated
+secret is exposed as `originSecret`.
+
+Supplying a value here creates no Secrets Manager resource, so it is also the way to avoid the
+secret's monthly cost — for example in short-lived preview stacks.
+
+**Ways to supply the value.** All of the following are plain strings or CDK string tokens
+and are accepted here:
+
+| Mechanism | What lands in the CloudFormation template |
+| --- | --- |
+| A literal string | The plaintext secret |
+| `SecretValue.secretsManager('name').unsafeUnwrap()` | `{{resolve:secretsmanager:name:SecretString:::}}` |
+| `new CfnDynamicReference(CfnDynamicReferenceService.SSM, '/name').toString()` | `{{resolve:ssm:/name}}` |
+| `StringParameter.valueForStringParameter(this, '/name')` | A `Ref` to an `AWS::SSM::Parameter::Value<String>` stack parameter |
+| `new CfnParameter(this, 'S', { type: 'String', noEcho: true }).valueAsString` | A `Ref` to a stack parameter |
+
+**SSM SecureString does not work here.** `{{resolve:ssm-secure:...}}` dynamic references are
+only resolved in a short allow-list of resource properties: Directory Service
+MicrosoftAD/SimpleAD passwords, ElastiCache `AuthToken`, IAM `LoginProfile.Password`, the
+Kinesis Firehose Redshift password, OpsWorks App/Stack passwords, and the RDS and Redshift
+`MasterUserPassword`. `AWS::CloudFront::Distribution` is not on that list, so the literal
+text `{{resolve:ssm-secure:...}}` would be forwarded to your origin as the header value.
+Use a Secrets Manager reference instead.
+
+**Note on `SecretValue`:** this property is a `string`, so a `SecretValue` cannot be passed
+directly. Use `.unsafeUnwrap()`, not `.toString()` — `.toString()` returns a token rather
+than throwing, but resolving it fails when the `@aws-cdk/core:checkSecretUsage` feature flag
+is enabled.
+
+**Note on visibility:** whichever mechanism you use, the resolved value is readable from the
+CloudFront distribution configuration by anyone with `cloudfront:GetDistribution`. Dynamic
+references keep the secret out of the template, not out of CloudFront.
+
+**Rotation:** changing this value updates the CloudFront distribution, which takes about a
+minute, while an origin's environment updates in seconds. Measured on a real deployment, that
+left a 59-second window in which CloudFront still forwarded the old value. Make your origin
+accept both the old and the new value across the deployment that changes it. See "Origin
+Secret Stability and Rotation" in the README.
+
+---
+
+*Example*
+
+```typescript
+// A fixed literal value (simplest, but the secret lives in source control)
+const protectedApi = new WafHttpApi(this, 'MyApi', {
+  httpApi: myHttpApi,
+  secretHeaderValue: 'a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6',
+});
 ```
 
 

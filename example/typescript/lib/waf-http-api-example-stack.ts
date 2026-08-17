@@ -52,8 +52,11 @@ export class WafHttpApiExampleStack extends cdk.Stack {
       const headers = (event && event.headers) || {};
       const identity = (event && Array.isArray(event.identitySource) && event.identitySource[0]) || undefined;
       const provided = identity || headers['x-origin-verify'] || headers['X-Origin-Verify'];
-            const expected = process.env.CLOUDFRONT_SECRET;
-            const ok = !!provided && !!expected && provided === expected;
+            // Accept every value the construct currently considers valid. While a rotation is in
+            // flight this holds both the new secret and the one CloudFront is still sending, which
+            // is what keeps the rotation free of rejected requests.
+            const accepted = (process.env.ACCEPTED_ORIGIN_SECRETS || '').split(',').filter(Boolean);
+            const ok = !!provided && accepted.includes(provided);
             return { isAuthorized: ok };
           } catch (e) {
             console.error('Authorizer error', e);
@@ -93,6 +96,13 @@ export class WafHttpApiExampleStack extends cdk.Stack {
       authorizer,
     });
 
+    httpApi.addRoutes({
+      path: "/hello",
+      methods: [HttpMethod.GET, HttpMethod.POST],
+      integration: lambdaIntegration,
+      authorizer,
+    });
+
     // Create the WAF-protected HTTP API using our construct
     const protectedApi = new WafHttpApi(this, "ProtectedApi", {
       httpApi: httpApi,
@@ -121,13 +131,40 @@ export class WafHttpApiExampleStack extends cdk.Stack {
       //     },
       //   },
       // ],
+      //
+      // By default the construct creates an AWS Secrets Manager secret for origin
+      // verification, so the synthesized template is identical on every synth.
+      // Supply your own value instead if you want to own its lifecycle, or to avoid
+      // the secret's monthly cost in a short-lived stack:
+      // secretHeaderValue: SecretValue.secretsManager('prod/api/origin-verify').unsafeUnwrap(),
+      //
+      // To rotate to a new secret, increment this by one and deploy. The construct keeps
+      // the previous generation valid, so no request is rejected while the CloudFront
+      // distribution catches up. Roll one generation at a time.
+      // originSecretGeneration: 1,
     });
 
-    // Provide the CloudFront secret to the authorizer
+    // Give the authorizer every accepted value, not just the one CloudFront sends now.
+    // These are CloudFormation dynamic references that resolve during deployment, which
+    // works here because a Lambda environment variable is a resource property.
+    //
+    // Using `acceptedSecretValues` rather than `secretHeaderValue` is what makes rotation
+    // free of rejected requests: a CloudFront distribution takes about a minute longer to
+    // update than this function, so during a rotation it keeps sending the previous value.
     authorizerLambda.addEnvironment(
-      "CLOUDFRONT_SECRET",
-      protectedApi.secretHeaderValue,
+      "ACCEPTED_ORIGIN_SECRETS",
+      protectedApi.acceptedSecretValues.join(","),
     );
+
+    // Alternatively, let the authorizer read the secret at runtime instead of
+    // receiving it as a plaintext environment variable:
+    // if (protectedApi.originSecret) {
+    //   protectedApi.originSecret.grantRead(authorizerLambda);
+    //   authorizerLambda.addEnvironment(
+    //     "ORIGIN_SECRET_ARN",
+    //     protectedApi.originSecret.secretArn,
+    //   );
+    // }
 
     // Output the important endpoints and information
 
@@ -151,10 +188,15 @@ export class WafHttpApiExampleStack extends cdk.Stack {
       description: "Name of the secret header added by CloudFront",
     });
 
-    new cdk.CfnOutput(this, "SecretHeaderValue", {
-      value: protectedApi.secretHeaderValue,
-      description: "Value of the secret header (for origin verification)",
-    });
+    // The secret header VALUE is deliberately not published as a stack output.
+    // By default it is a CloudFormation dynamic reference, which is only resolved in
+    // resource properties — an output would emit the literal `{{resolve:...}}` text.
+    // Stack outputs also have no `noEcho`, are returned by `cloudformation:DescribeStacks`,
+    // and are printed on `cdk deploy`.
+    //
+    // To read the value for manual testing:
+    //   aws cloudfront get-distribution-config --id <CloudFrontDistributionId> \
+    //     --query 'DistributionConfig.Origins.Items[0].CustomHeaders'
 
     // If custom domain is configured, output it
     if (protectedApi.customDomain) {

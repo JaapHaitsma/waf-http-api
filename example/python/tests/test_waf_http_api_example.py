@@ -111,7 +111,7 @@ class TestWafHttpApiExampleStack:
         template.has_resource_properties("AWS::Lambda::Function", {
             "Environment": {
                 "Variables": {
-                    "CLOUDFRONT_SECRET": assertions.Match.any_value()
+                    "ACCEPTED_ORIGIN_SECRETS": assertions.Match.any_value()
                 }
             }
         })
@@ -122,7 +122,12 @@ class TestWafHttpApiExampleStack:
         template.has_output("CloudFrontUrl", {})
         template.has_output("CloudFrontDistributionId", {})
         template.has_output("SecretHeaderName", {})
-        template.has_output("SecretHeaderValue", {})
+
+    def test_secret_header_value_not_published_as_output(self, template):
+        """The secret value is a deploy-time dynamic reference, which does not
+        resolve in outputs, and outputs are readable via DescribeStacks."""
+        outputs = template.to_json().get("Outputs", {})
+        assert "SecretHeaderValue" not in outputs
 
     def test_cloudfront_origin_has_custom_headers(self, template):
         """Test that CloudFront origin is configured with custom headers."""

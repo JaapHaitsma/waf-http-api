@@ -73,8 +73,11 @@ def handler(event, context):
         identity_list = (event or {}).get('identitySource') or []
         identity = identity_list[0] if isinstance(identity_list, list) and identity_list else None
         provided = identity or headers.get('x-origin-verify') or headers.get('X-Origin-Verify')
-        expected = os.environ.get('CLOUDFRONT_SECRET')
-        ok = bool(provided) and bool(expected) and provided == expected
+        # Accept every value the construct currently considers valid. While a rotation is in
+        # flight this holds both the new secret and the one CloudFront is still sending, which
+        # is what keeps the rotation free of rejected requests.
+        accepted = [v for v in (os.environ.get('ACCEPTED_ORIGIN_SECRETS') or '').split(',') if v]
+        ok = bool(provided) and provided in accepted
         return { 'isAuthorized': ok }
     except Exception as e:
         print('Authorizer error:', e)
@@ -112,6 +115,13 @@ def handler(event, context):
             authorizer=lambda_authorizer,
         )
 
+        http_api.add_routes(
+            path="/hello",
+            methods=[apigwv2.HttpMethod.GET, apigwv2.HttpMethod.POST],
+            integration=lambda_integration,
+            authorizer=lambda_authorizer,
+        )
+
         # Create the WAF-protected HTTP API using our construct
         protected_api = WafHttpApi(
             self, "ProtectedApi",
@@ -141,13 +151,41 @@ def handler(event, context):
             #         },
             #     },
             # ],
+            #
+            # By default the construct creates an AWS Secrets Manager secret for origin
+            # verification, so the synthesized template is identical on every synth.
+            # Supply your own value instead if you want to own its lifecycle, or to
+            # avoid the secret's monthly cost in a short-lived stack:
+            # secret_header_value=SecretValue.secrets_manager(
+            #     'prod/api/origin-verify').unsafe_unwrap(),
+            #
+            # To rotate to a new secret, increment this by one and deploy. The construct
+            # keeps the previous generation valid, so no request is rejected while the
+            # CloudFront distribution catches up. Roll one generation at a time.
+            # origin_secret_generation=1,
         )
 
-        # Provide the CloudFront secret to the authorizer
+        # Give the authorizer every accepted value, not just the one CloudFront sends now.
+        # These are CloudFormation dynamic references that resolve during deployment, which
+        # works here because a Lambda environment variable is a resource property.
+        #
+        # Using `accepted_secret_values` rather than `secret_header_value` is what makes
+        # rotation free of rejected requests: a CloudFront distribution takes about a minute
+        # longer to update than this function, so during a rotation it keeps sending the
+        # previous value.
         authorizer_lambda.add_environment(
-            "CLOUDFRONT_SECRET",
-            protected_api.secret_header_value
+            "ACCEPTED_ORIGIN_SECRETS",
+            ",".join(protected_api.accepted_secret_values)
         )
+
+        # Alternatively, let the authorizer read the secret at runtime instead of
+        # receiving it as a plaintext environment variable:
+        # if protected_api.origin_secret:
+        #     protected_api.origin_secret.grant_read(authorizer_lambda)
+        #     authorizer_lambda.add_environment(
+        #         "ORIGIN_SECRET_ARN",
+        #         protected_api.origin_secret.secret_arn
+        #     )
 
         # Store references for outputs and tests
         self.http_api = http_api
@@ -179,11 +217,15 @@ def handler(event, context):
             description="Name of the secret header added by CloudFront"
         )
 
-        CfnOutput(
-            self, "SecretHeaderValue",
-            value=protected_api.secret_header_value,
-            description="Value of the secret header (for origin verification)"
-        )
+        # The secret header VALUE is deliberately not published as a stack output.
+        # By default it is a CloudFormation dynamic reference, which is only resolved
+        # in resource properties - an output would emit the literal `{{resolve:...}}`
+        # text. Stack outputs also have no `no_echo`, are returned by
+        # `cloudformation:DescribeStacks`, and are printed on `cdk deploy`.
+        #
+        # To read the value for manual testing:
+        #   aws cloudfront get-distribution-config --id <CloudFrontDistributionId> \
+        #     --query 'DistributionConfig.Origins.Items[0].CustomHeaders'
 
         # If custom domain is configured, output it
         if hasattr(protected_api, 'custom_domain') and protected_api.custom_domain:

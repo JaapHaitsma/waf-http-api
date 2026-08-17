@@ -59,7 +59,18 @@ The deployment will output several important URLs and values:
 
 - **CloudFrontUrl**: The main endpoint you should use (protected by WAF)
 - **HttpApiUrl**: Direct API Gateway URL (will return 401 Unauthorized due to authorizer)
-- **SecretHeaderValue**: Used by the Lambda authorizer for origin verification
+- **CloudFrontDistributionId**: The distribution ID, needed by the command below
+- **SecretHeaderName**: The header CloudFront adds for origin verification (`X-Origin-Verify`)
+
+The secret header **value** is deliberately not a stack output: the construct creates a
+Secrets Manager secret and passes it as a CloudFormation dynamic reference, which only
+resolves in resource properties, and stack outputs are readable by anyone with
+`cloudformation:DescribeStacks`. If you need the value to test the origin directly:
+
+```bash
+aws cloudfront get-distribution-config --id YOUR_DISTRIBUTION_ID \
+  --query 'DistributionConfig.Origins.Items[0].CustomHeaders'
+```
 
 ### 4. Test the API
 

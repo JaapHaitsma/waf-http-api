@@ -74,14 +74,21 @@ describe("WafHttpApiExampleStack", () => {
     template.hasOutput("CloudFrontUrl", {});
     template.hasOutput("CloudFrontDistributionId", {});
     template.hasOutput("SecretHeaderName", {});
-    template.hasOutput("SecretHeaderValue", {});
+  });
+
+  test("the secret header value is not published as a stack output", () => {
+    // It is a deploy-time dynamic reference, which does not resolve in outputs,
+    // and stack outputs are readable by anyone with cloudformation:DescribeStacks.
+    expect(Object.keys(template.toJSON().Outputs ?? {})).not.toContain(
+      "SecretHeaderValue",
+    );
   });
 
   test("Lambda has environment variable for CloudFront secret", () => {
     template.hasResourceProperties("AWS::Lambda::Function", {
       Environment: {
         Variables: Match.objectLike({
-          CLOUDFRONT_SECRET: Match.anyValue(),
+          ACCEPTED_ORIGIN_SECRETS: Match.anyValue(),
         }),
       },
     });

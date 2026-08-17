@@ -1,4 +1,5 @@
-import { App, Stack } from "aws-cdk-lib";
+import { App, SecretValue, Stack } from "aws-cdk-lib";
+import { Annotations, Match } from "aws-cdk-lib/assertions";
 import { HttpApi } from "aws-cdk-lib/aws-apigatewayv2";
 import * as route53 from "aws-cdk-lib/aws-route53";
 import { WafHttpApi } from "../src/index";
@@ -336,6 +337,190 @@ describe("WafHttpApi - Validation and Error Handling", () => {
           hostedZone,
         });
       }).toThrow(/Invalid domain format/);
+    });
+  });
+
+  describe("Secret Header Value Validation", () => {
+    test("should throw descriptive error for empty secretHeaderValue", () => {
+      expect(() => {
+        new WafHttpApi(stack, "TestWafApi", { httpApi, secretHeaderValue: "" });
+      }).toThrow(/'secretHeaderValue' must be a non-empty string/);
+    });
+
+    test("should throw descriptive error for whitespace-only secretHeaderValue", () => {
+      expect(() => {
+        new WafHttpApi(stack, "TestWafApi", {
+          httpApi,
+          secretHeaderValue: "   ",
+        });
+      }).toThrow(/'secretHeaderValue' must be a non-empty string/);
+    });
+
+    test("should throw descriptive error for secretHeaderValue containing control characters", () => {
+      expect(() => {
+        new WafHttpApi(stack, "TestWafApi", {
+          httpApi,
+          secretHeaderValue: "secret\r\nX-Injected: yes",
+        });
+      }).toThrow(/not allowed in an HTTP header value/);
+    });
+
+    test("should not include the secret value in the control character error message", () => {
+      expect(() => {
+        new WafHttpApi(stack, "TestWafApi", {
+          httpApi,
+          secretHeaderValue: "supersecret\nvalue",
+        });
+      }).toThrow(expect.not.stringContaining("supersecret"));
+    });
+
+    test("should throw descriptive error for secretHeaderValue exceeding the CloudFront limit", () => {
+      expect(() => {
+        new WafHttpApi(stack, "TestWafApi", {
+          httpApi,
+          secretHeaderValue: "a".repeat(1784),
+        });
+      }).toThrow(/exceeds the CloudFront limit/);
+    });
+
+    test("should accept a secretHeaderValue at the CloudFront limit", () => {
+      expect(() => {
+        new WafHttpApi(stack, "TestWafApi", {
+          httpApi,
+          secretHeaderValue: "a".repeat(1783),
+        });
+      }).not.toThrow();
+    });
+
+    test("should not validate the content of unresolved tokens", () => {
+      expect(() => {
+        new WafHttpApi(stack, "TestWafApi", {
+          httpApi,
+          secretHeaderValue:
+            SecretValue.secretsManager("prod/api/x").unsafeUnwrap(),
+        });
+      }).not.toThrow();
+    });
+
+    test("should validate hosted zone and domain before secretHeaderValue", () => {
+      expect(() => {
+        new WafHttpApi(stack, "TestWafApi", {
+          httpApi,
+          domain: "api.example.com",
+          secretHeaderValue: "",
+        });
+      }).toThrow(/Hosted zone required/);
+    });
+  });
+
+  describe("Origin Secret Generation Validation", () => {
+    test.each([
+      ["a negative number", -1],
+      ["a fraction", 1.5],
+    ])("should throw for a generation that is %s", (_label, generation) => {
+      expect(() => {
+        new WafHttpApi(stack, "TestWafApi", {
+          httpApi,
+          originSecretGeneration: generation,
+        });
+      }).toThrow(/must be a whole number of 0 or more/);
+    });
+
+    test("should throw for a generation past the naming limit", () => {
+      // Past 9999 the '-g<n>' suffix reaches six characters, which collides with the
+      // six random characters Secrets Manager appends to the ARN.
+      expect(() => {
+        new WafHttpApi(stack, "TestWafApi", {
+          httpApi,
+          originSecretGeneration: 10000,
+        });
+      }).toThrow(/is too large/);
+    });
+
+    test.each([0, 1, 2, 9999])(
+      "should accept the valid generation %s",
+      (generation) => {
+        const s2 = new Stack(new App(), "TestStack");
+        expect(() => {
+          new WafHttpApi(s2, "TestWafApi", {
+            httpApi: new HttpApi(s2, "Api"),
+            originSecretGeneration: generation,
+          });
+        }).not.toThrow();
+      },
+    );
+
+    test("should warn when a generation is combined with secretHeaderValue", () => {
+      const warn = jest.spyOn(console, "warn").mockImplementation();
+      try {
+        new WafHttpApi(stack, "TestWafApi", {
+          httpApi,
+          secretHeaderValue: "stable-origin-verify-secret-001",
+          originSecretGeneration: 1,
+        });
+        expect(warn).toHaveBeenCalledWith(
+          expect.stringContaining("the generation will be ignored"),
+        );
+      } finally {
+        warn.mockRestore();
+      }
+    });
+
+    test("should expose only the supplied value when secretHeaderValue is used", () => {
+      const wafApi = new WafHttpApi(stack, "TestWafApi", {
+        httpApi,
+        secretHeaderValue: "stable-origin-verify-secret-001",
+      });
+
+      expect(wafApi.acceptedSecretValues).toEqual([
+        "stable-origin-verify-secret-001",
+      ]);
+      expect(wafApi.previousOriginSecret).toBeUndefined();
+    });
+  });
+
+  describe("Secret Header Value Warnings", () => {
+    test("should warn when the supplied secretHeaderValue is shorter than 16 characters", () => {
+      new WafHttpApi(stack, "TestWafApi", {
+        httpApi,
+        secretHeaderValue: "short",
+      });
+
+      Annotations.fromStack(stack).hasWarning(
+        "*",
+        Match.stringLikeRegexp("shorter than 16 characters"),
+      );
+    });
+
+    test("should not warn for a secretHeaderValue of 16 characters or more", () => {
+      new WafHttpApi(stack, "TestWafApi", {
+        httpApi,
+        secretHeaderValue: "abcdefghijklmnop",
+      });
+
+      Annotations.fromStack(stack).hasNoWarning(
+        "*",
+        Match.stringLikeRegexp("shorter than 16 characters"),
+      );
+    });
+
+    test("should not warn for an unresolved token", () => {
+      new WafHttpApi(stack, "TestWafApi", {
+        httpApi,
+        secretHeaderValue:
+          SecretValue.secretsManager("prod/api/x").unsafeUnwrap(),
+      });
+
+      Annotations.fromStack(stack).hasNoWarning(
+        "*",
+        Match.stringLikeRegexp("shorter than 16 characters"),
+      );
+    });
+
+    test("should not warn in the default managed mode", () => {
+      new WafHttpApi(stack, "TestWafApi", { httpApi });
+
+      Annotations.fromStack(stack).hasNoWarning("*", Match.anyValue());
     });
   });
 });
