@@ -91,6 +91,11 @@ new TextFile(project, ".eslintignore", {
   ],
 });
 
+// The examples are standalone CDK apps for readers of this repo, not part of the library.
+// Without this they are packed into the npm tarball - example/typescript/package-lock.json
+// alone was 156kB of a 160kB package.
+project.npmignore?.addPatterns("/example/");
+
 // Ensure the root tsconfig files do not apply to example/*
 project.tsconfig?.addExclude("example/**");
 project.tsconfigDev?.addExclude("example/**");
