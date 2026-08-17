@@ -43,6 +43,10 @@ const project = new awscdk.AwsCdkConstructLibrary({
   gitignore: [".vscode", ".DS_Store"],
 
   releaseToNpm: true,
+  // Publish to npm via OIDC trusted publishing rather than a long-lived token.
+  // Configured on npmjs.com for this repo; projen drops NPM_TOKEN from the workflow,
+  // which matters because npm prefers a token over OIDC when both are present.
+  npmTrustedPublishing: true,
   prettier: true,
 
   publishToPypi: {
