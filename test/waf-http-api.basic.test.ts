@@ -1,5 +1,7 @@
 import { App, Stack, Token } from "aws-cdk-lib";
+import { Match, Template } from "aws-cdk-lib/assertions";
 import { HttpApi } from "aws-cdk-lib/aws-apigatewayv2";
+import * as route53 from "aws-cdk-lib/aws-route53";
 import { WafHttpApi } from "../src/index";
 
 describe("WafHttpApi - Basic Functionality", () => {
@@ -58,6 +60,47 @@ describe("WafHttpApi - Basic Functionality", () => {
       expect(wafApi.certificate).toBeUndefined();
       expect(wafApi.aRecord).toBeUndefined();
       expect(wafApi.aaaaRecord).toBeUndefined();
+    });
+  });
+
+  describe("Resource Tagging", () => {
+    test.each([
+      "AWS::WAFv2::WebACL",
+      "AWS::SecretsManager::Secret",
+      "AWS::CloudFront::Distribution",
+    ])("should tag the %s with the construct path", (resourceType) => {
+      new WafHttpApi(stack, "ProtectedApi", { httpApi });
+
+      Template.fromStack(stack).hasResourceProperties(
+        resourceType,
+        Match.objectLike({
+          Tags: Match.arrayWith([
+            { Key: "waf-http-api:construct", Value: "TestStack/ProtectedApi" },
+          ]),
+        }),
+      );
+    });
+
+    test("should tag the auto-generated certificate, which cannot be named", () => {
+      const hostedZone = route53.HostedZone.fromHostedZoneAttributes(
+        stack,
+        "TestZone",
+        { hostedZoneId: "Z1234567890ABC", zoneName: "example.com" },
+      );
+      new WafHttpApi(stack, "ProtectedApi", {
+        httpApi,
+        domain: "api.example.com",
+        hostedZone,
+      });
+
+      Template.fromStack(stack).hasResourceProperties(
+        "AWS::CertificateManager::Certificate",
+        Match.objectLike({
+          Tags: Match.arrayWith([
+            { Key: "waf-http-api:construct", Value: "TestStack/ProtectedApi" },
+          ]),
+        }),
+      );
     });
   });
 

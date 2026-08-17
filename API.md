@@ -143,11 +143,13 @@ Any object.
 | <code><a href="#waf-http-api.WafHttpApi.property.node">node</a></code>                           | <code>constructs.Node</code>                                 | The tree node.                                                                   |
 | <code><a href="#waf-http-api.WafHttpApi.property.distribution">distribution</a></code>           | <code>aws-cdk-lib.aws_cloudfront.Distribution</code>         | The CloudFront distribution created and managed by this construct.               |
 | <code><a href="#waf-http-api.WafHttpApi.property.secretHeaderValue">secretHeaderValue</a></code> | <code>string</code>                                          | The secret value CloudFront sends to the origin in the `X-Origin-Verify` header. |
+| <code><a href="#waf-http-api.WafHttpApi.property.webAclMetricName">webAclMetricName</a></code>   | <code>string</code>                                          | The CloudWatch metric name of the AWS WAF WebACL.                                |
 | <code><a href="#waf-http-api.WafHttpApi.property.aaaaRecord">aaaaRecord</a></code>               | <code>aws-cdk-lib.aws_route53.AaaaRecord</code>              | The Route 53 AAAA record created for the custom domain.                          |
 | <code><a href="#waf-http-api.WafHttpApi.property.aRecord">aRecord</a></code>                     | <code>aws-cdk-lib.aws_route53.ARecord</code>                 | The Route 53 A record created for the custom domain.                             |
 | <code><a href="#waf-http-api.WafHttpApi.property.certificate">certificate</a></code>             | <code>aws-cdk-lib.aws_certificatemanager.ICertificate</code> | The SSL certificate used for the custom domain.                                  |
 | <code><a href="#waf-http-api.WafHttpApi.property.customDomain">customDomain</a></code>           | <code>string</code>                                          | The custom domain name configured for this distribution.                         |
 | <code><a href="#waf-http-api.WafHttpApi.property.originSecret">originSecret</a></code>           | <code>aws-cdk-lib.aws_secretsmanager.ISecret</code>          | The AWS Secrets Manager secret holding the origin verification value.            |
+| <code><a href="#waf-http-api.WafHttpApi.property.webAclName">webAclName</a></code>               | <code>string</code>                                          | The name of the AWS WAF WebACL, `<stackName>-<constructId>-WebACL`.              |
 
 ---
 
@@ -241,6 +243,37 @@ export const handler = async (event: APIGatewayProxyEvent) => {
 const lambda = new NodejsFunction(this, "ApiHandler", {
   environment: {
     CLOUDFRONT_SECRET: wafHttpApi.secretHeaderValue,
+  },
+});
+```
+
+##### `webAclMetricName`<sup>Required</sup> <a name="webAclMetricName" id="waf-http-api.WafHttpApi.property.webAclMetricName"></a>
+
+```typescript
+public readonly webAclMetricName: string;
+```
+
+- _Type:_ string
+
+The CloudWatch metric name of the AWS WAF WebACL.
+
+Unlike the physical name, CloudFormation cannot generate this — it is a required property with
+no default — so the construct sets it to `<stackName>-<constructId>-WebACL`. That keeps metrics
+from two stacks apart even when they reuse the same construct id.
+
+---
+
+_Example_
+
+```typescript
+// Alarm on blocked requests for this specific WebACL
+new Metric({
+  namespace: "AWS/WAFV2",
+  metricName: "BlockedRequests",
+  dimensionsMap: {
+    WebACL: wafHttpApi.webAclMetricName,
+    Rule: "ALL",
+    Region: "global",
   },
 });
 ```
@@ -439,6 +472,28 @@ if (wafHttpApi.originSecret) {
   );
 }
 ```
+
+##### `webAclName`<sup>Optional</sup> <a name="webAclName" id="waf-http-api.WafHttpApi.property.webAclName"></a>
+
+```typescript
+public readonly webAclName: string;
+```
+
+- _Type:_ string
+
+The name of the AWS WAF WebACL, `<stackName>-<constructId>-WebACL`.
+
+The construct always names the WebACL itself. CloudFormation's generated name for this
+resource type carries no stack name — an unnamed WebACL in `AppStack` deploys as
+`ProtectedApiWebAcl<hash>-<random>` — so the console cannot tell you which deployment it
+belongs to.
+
+This is `undefined` only when the stack name is an unresolved token, as inside a `NestedStack`,
+where it cannot be sanitized at synthesis. CloudFormation then generates the name.
+
+The same string is used as the CloudWatch metric name, exposed as `webAclMetricName`.
+
+---
 
 #### Constants <a name="Constants" id="Constants"></a>
 
@@ -670,9 +725,11 @@ is enabled.
 CloudFront distribution configuration by anyone with `cloudfront:GetDistribution`. Dynamic
 references keep the secret out of the template, not out of CloudFront.
 
-**Rotation:** changing this value changes the CloudFront distribution and takes minutes to
-propagate. Make your origin accept both the old and the new value across the deployment that
-changes it. See "Origin Secret Stability and Rotation" in the README.
+**Rotation:** changing this value updates the CloudFront distribution, which takes about a
+minute, while an origin's environment updates in seconds. Measured on a real deployment, that
+left a 59-second window in which CloudFront still forwarded the old value. Make your origin
+accept both the old and the new value across the deployment that changes it. See "Origin
+Secret Stability and Rotation" in the README.
 
 ---
 

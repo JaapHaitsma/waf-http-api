@@ -96,15 +96,60 @@ describe("WafHttpApi - CloudFront Configuration", () => {
       });
     });
 
-    test("should not give the managed secret a physical name", () => {
-      // A physical name plus the Secrets Manager recovery window makes a stack
-      // delete followed by a recreate fail on a name collision.
-      new WafHttpApi(stack, "TestWafApi", { httpApi });
+    test("should qualify the secret description with the stack name", () => {
+      // Two deployments in one account must be tellable apart in the Secrets Manager console.
+      new WafHttpApi(stack, "ProtectedApi", { httpApi });
+
+      Template.fromStack(stack).hasResourceProperties(
+        "AWS::SecretsManager::Secret",
+        {
+          Description:
+            "CloudFront origin verification secret for TestStack/ProtectedApi",
+        },
+      );
+    });
+
+    test("should name the secret after the stack", () => {
+      // Left to CloudFormation the generated name is <logicalId truncated>-<random>, with no
+      // stack name in it. Safe to name because `Name` is the only property of
+      // AWS::SecretsManager::Secret that requires replacement, and safe to delete and recreate
+      // because DeletionPolicy Delete makes CloudFormation force-delete without a recovery window.
+      new WafHttpApi(stack, "ProtectedApi", { httpApi });
 
       const secrets = Template.fromStack(stack).findResources(
         "AWS::SecretsManager::Secret",
       );
-      expect(Object.values(secrets)[0].Properties.Name).toBeUndefined();
+      const secret = Object.values(secrets)[0];
+      expect(secret.Properties.Name).toBe(
+        "TestStack-ProtectedApi-VerificationSecret",
+      );
+      expect(secret.DeletionPolicy).toBe("Delete");
+    });
+
+    test("should not end the secret name with a hyphen and six characters", () => {
+      // Secrets Manager appends `-` plus six random characters to the ARN and warns that a name
+      // ending that way is confused with the suffix during partial-ARN lookups.
+      new WafHttpApi(stack, "ProtectedApi", { httpApi });
+
+      const secrets = Template.fromStack(stack).findResources(
+        "AWS::SecretsManager::Secret",
+      );
+      expect(Object.values(secrets)[0].Properties.Name).not.toMatch(
+        /-[A-Za-z0-9]{6}$/,
+      );
+    });
+
+    test("should label the distribution with a comment, which is its only readable identifier", () => {
+      // A CloudFront distribution has no name property, and CloudFormation cannot generate
+      // the comment, so the construct sets it.
+      new WafHttpApi(stack, "ProtectedApi", { httpApi });
+
+      const distributions = Template.fromStack(stack).findResources(
+        "AWS::CloudFront::Distribution",
+      );
+      expect(
+        Object.values(distributions)[0].Properties.DistributionConfig.Comment,
+      ).toBe("TestStack-ProtectedApi-Cloudfront");
     });
 
     test("should reference the managed secret as a dynamic reference in the origin header", () => {

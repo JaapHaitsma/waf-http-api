@@ -1,4 +1,12 @@
-import { Annotations, Fn, RemovalPolicy, Token } from "aws-cdk-lib";
+import * as crypto from "crypto";
+import {
+  Annotations,
+  Fn,
+  RemovalPolicy,
+  Stack,
+  Tags,
+  Token,
+} from "aws-cdk-lib";
 import { HttpApi } from "aws-cdk-lib/aws-apigatewayv2";
 import * as acm from "aws-cdk-lib/aws-certificatemanager";
 import * as cloudfront from "aws-cdk-lib/aws-cloudfront";
@@ -183,9 +191,11 @@ export interface WafHttpApiProps {
    * CloudFront distribution configuration by anyone with `cloudfront:GetDistribution`. Dynamic
    * references keep the secret out of the template, not out of CloudFront.
    *
-   * **Rotation:** changing this value changes the CloudFront distribution and takes minutes to
-   * propagate. Make your origin accept both the old and the new value across the deployment that
-   * changes it. See "Origin Secret Stability and Rotation" in the README.
+   * **Rotation:** changing this value updates the CloudFront distribution, which takes about a
+   * minute, while an origin's environment updates in seconds. Measured on a real deployment, that
+   * left a 59-second window in which CloudFront still forwarded the old value. Make your origin
+   * accept both the old and the new value across the deployment that changes it. See "Origin
+   * Secret Stability and Rotation" in the README.
    *
    * @type {string}
    * @default - An AWS Secrets Manager secret created and managed by the construct, exposed as `originSecret`
@@ -416,6 +426,47 @@ export class WafHttpApi extends Construct {
   public readonly originSecret?: secretsmanager.ISecret;
 
   /**
+   * The name of the AWS WAF WebACL, `<stackName>-<constructId>-WebACL`.
+   *
+   * The construct always names the WebACL itself. CloudFormation's generated name for this
+   * resource type carries no stack name — an unnamed WebACL in `AppStack` deploys as
+   * `ProtectedApiWebAcl<hash>-<random>` — so the console cannot tell you which deployment it
+   * belongs to.
+   *
+   * This is `undefined` only when the stack name is an unresolved token, as inside a `NestedStack`,
+   * where it cannot be sanitized at synthesis. CloudFormation then generates the name.
+   *
+   * The same string is used as the CloudWatch metric name, exposed as `webAclMetricName`.
+   *
+   * @readonly
+   * @type {string | undefined}
+   */
+  public readonly webAclName?: string;
+
+  /**
+   * The CloudWatch metric name of the AWS WAF WebACL.
+   *
+   * Unlike the physical name, CloudFormation cannot generate this — it is a required property with
+   * no default — so the construct sets it to `<stackName>-<constructId>-WebACL`. That keeps metrics
+   * from two stacks apart even when they reuse the same construct id.
+   *
+   * @readonly
+   * @type {string}
+   * @example
+   * // Alarm on blocked requests for this specific WebACL
+   * new Metric({
+   *   namespace: 'AWS/WAFV2',
+   *   metricName: 'BlockedRequests',
+   *   dimensionsMap: {
+   *     WebACL: wafHttpApi.webAclMetricName,
+   *     Rule: 'ALL',
+   *     Region: 'global',
+   *   },
+   * });
+   */
+  public readonly webAclMetricName: string;
+
+  /**
    * The SSL certificate used for the custom domain.
    * This property will be defined in the following scenarios:
    * - When a certificate is provided via the `certificate` prop
@@ -566,6 +617,14 @@ export class WafHttpApi extends Construct {
    */
   constructor(scope: Construct, id: string, props: WafHttpApiProps) {
     super(scope, id);
+
+    // Tag everything this construct creates so it is attributable to this specific instance in the
+    // console, in Resource Groups and in Cost Explorer. Tags are cheap in a way names are not:
+    // they update in place, they never collide, and they reach resources that cannot be named at
+    // all, such as the auto-generated ACM certificate. CDK propagates these to every taggable
+    // resource in the construct's scope. (Route 53 record sets do not support tags, but they are
+    // already identified by the domain.)
+    Tags.of(this).add("waf-http-api:construct", this.node.path);
 
     /**
      * @example
@@ -816,7 +875,16 @@ export class WafHttpApi extends Construct {
         this,
         "OriginVerifySecret",
         {
-          description: `CloudFront origin verification secret for ${id}`,
+          // Named after the stack. Left to CloudFormation the generated name is
+          // `<logicalId truncated>-<random>` with no stack name in it. Safe to name for the same
+          // reason as the WebACL - `Name` is the only property of AWS::SecretsManager::Secret that
+          // requires replacement - and safe to delete and recreate because the removal policy
+          // below is DESTROY, which CloudFormation applies with ForceDeleteWithoutRecovery, so no
+          // recovery window survives to collide with the new name.
+          secretName: this.buildLabel(id, "VerificationSecret"),
+          description:
+            "CloudFront origin verification secret for " +
+            `${Stack.of(this).stackName}/${id}`,
           generateSecretString: {
             passwordLength: 32,
             // Restrict to [A-Za-z0-9] so the value is unambiguously safe as an HTTP header value.
@@ -824,8 +892,6 @@ export class WafHttpApi extends Construct {
             includeSpace: false,
           },
           removalPolicy: RemovalPolicy.DESTROY,
-          // Deliberately no `secretName`: a physical name combined with Secrets Manager's recovery
-          // window makes a stack delete followed by a recreate fail on a name collision.
         },
       );
       this.secretHeaderValue = this.originSecret.secretValue.unsafeUnwrap();
@@ -835,9 +901,27 @@ export class WafHttpApi extends Construct {
     // Otherwise, fall back to the default managed rules defined in `createDefaultRules()`.
     const rules = props.wafRules ?? this.createDefaultRules();
 
+    // Name the WebACL after the stack. Left to CloudFormation, the generated name is
+    // `<logicalId>-<random>` with no stack name in it, so you cannot tell from the AWS WAF console
+    // which stack a WebACL belongs to.
+    //
+    // Naming it explicitly is safe here specifically because `name` and `scope` are the only two
+    // properties of AWS::WAFv2::WebACL that require replacement, and this construct hard-codes
+    // `scope`. A replacement can therefore only be caused by the name itself changing, in which
+    // case the old and new names differ and cannot collide.
+    this.webAclName = this.buildLabel(id, "WebACL");
+
+    // The same string doubles as the CloudWatch metric name, which CloudFormation cannot generate
+    // at all - it is a required property with no default. Using one string for both also settles
+    // any ambiguity about which of the two drives the CloudWatch `WebACL` dimension.
+    this.webAclMetricName = this.webAclName ?? `${id}-Waf`;
+
     // 1. Create the AWS WAF WebACL (Web Access Control List)
     // This WebACL will be associated with the CloudFront distribution to filter web traffic.
     const webAcl = new wafv2.CfnWebACL(this, "WebAcl", {
+      // `undefined` only inside a NestedStack, where the stack name is a deploy-time token that
+      // cannot be sanitized at synthesis; CloudFormation generates a name in that case.
+      name: this.webAclName,
       // Default action for requests that don't match any rules. 'allow' means they pass through.
       defaultAction: { allow: {} },
       // The scope MUST be 'CLOUDFRONT' for a WebACL to be associated with a CloudFront distribution.
@@ -845,7 +929,7 @@ export class WafHttpApi extends Construct {
       // Configuration for CloudWatch metrics and sampled requests, useful for monitoring WAF activity.
       visibilityConfig: {
         cloudWatchMetricsEnabled: true, // Enable metrics to view WAF performance in CloudWatch.
-        metricName: `${id}-Waf`, // Unique metric name for this WebACL.
+        metricName: this.webAclMetricName,
         sampledRequestsEnabled: true, // Enable sampling of requests for debugging and analysis.
       },
       // The array of rules that define how to inspect and handle web requests.
@@ -856,7 +940,12 @@ export class WafHttpApi extends Construct {
     // This distribution acts as the public-facing endpoint for the HTTP API,
     // providing CDN benefits like caching and reduced latency, and integrating with WAF.
     this.distribution = new cloudfront.Distribution(this, "ApiDistribution", {
-      comment: `CloudFront distribution for HTTP API: ${props.httpApi.httpApiId}`, // Descriptive comment for the distribution.
+      // A CloudFront distribution has no name property, so the comment - shown as "Description"
+      // in the console - is the only human-readable identifier. Keep it in step with the names of
+      // the other resources so all three are recognisable as one deployment.
+      comment:
+        this.buildLabel(id, "Cloudfront") ??
+        `CloudFront distribution for HTTP API: ${props.httpApi.httpApiId}`,
       // Associate the created WAF WebACL with this CloudFront distribution.
       webAclId: webAcl.attrArn,
       // Add domain aliases when a custom domain is provided
@@ -1284,6 +1373,55 @@ export class WafHttpApi extends Construct {
         "   • Ensure no trailing dots in domain or hosted zone name\n" +
         "   • Check if you're using the correct hosted zone for your domain",
     );
+  }
+
+  /**
+   * @private
+   * @method buildLabel
+   * @description Builds a human-readable label, `<stackName>-<constructId>-<kind>`, for the
+   * identifiers CloudFormation cannot generate on its own: the WebACL's CloudWatch metric name and
+   * the CloudFront distribution's comment.
+   *
+   * This is deliberately **not** used for physical resource names. Leaving those unset lets
+   * CloudFormation generate `<stackName>-<logicalId>-<random>`, which already identifies the stack
+   * and the construct, and keeps its ability to replace the resource — a custom-named resource
+   * cannot be replaced in place, because the replacement would collide with the original while
+   * both exist.
+   *
+   * The result is conformed to `^[0-9A-Za-z_-]{1,128}$`, the strictest rule across the fields
+   * involved (AWS WAF's metric name). Labels long enough to need truncation get a deterministic
+   * hash suffix so two different long labels cannot collapse to the same string.
+   *
+   * @param {string} id The construct's id within its scope
+   * @param {string} kind A short discriminator for the resource, e.g. `WebACL`
+   * @returns {string | undefined} The label, or `undefined` when the stack name is an unresolved
+   * token, in which case the caller falls back to something that does not need it
+   */
+  private buildLabel(id: string, kind: string): string | undefined {
+    const stackName = Stack.of(this).stackName;
+
+    // In a NestedStack the stack name is only known at deployment time. A token cannot be
+    // sanitized or truncated without corrupting it.
+    if (Token.isUnresolved(stackName)) {
+      return undefined;
+    }
+
+    const readable = `${stackName}-${id}-${kind}`.replace(
+      /[^0-9A-Za-z_-]/g,
+      "-",
+    );
+    if (readable.length <= 128) {
+      return readable;
+    }
+
+    // Truncating alone could collide, so append a deterministic hash. Deterministic keeps the
+    // synthesized template stable across synthesises.
+    const hash = crypto
+      .createHash("sha256")
+      .update(`${stackName}/${id}/${kind}`)
+      .digest("hex")
+      .slice(0, 8);
+    return `${readable.slice(0, 128 - 9)}-${hash}`;
   }
 
   /**

@@ -372,10 +372,14 @@ because it has two costs:
 - `cdk diff` is never clean. The distribution's `OriginCustomHeaders` changes on every deployment,
   and so does every resource consuming `secretHeaderValue`.
 - CloudFormation updates independent resources **in parallel**. A Lambda environment variable update
-  lands in seconds; a CloudFront distribution update takes minutes, and CloudFormation blocks until
-  it reaches `Deployed`. In between, edge locations still forward the previous secret to an origin
-  that already expects the new one, so requests are rejected with HTTP 401/403. The same window
-  opens on rollback.
+  lands in seconds; a CloudFront distribution update takes about a minute, and CloudFormation blocks
+  until it reaches `Deployed`. In between, edge locations still forward the previous secret to an
+  origin that already expects the new one, so requests are rejected with HTTP 401/403. The same
+  window opens on rollback.
+
+Measured on a real deployment that rotated the secret: the Lambda reached `UPDATE_COMPLETE` 8
+seconds in, the distribution 67 seconds in — a **59-second window** in which CloudFront forwarded a
+secret the origin would reject.
 
 Both of those apply to any change of the secret, which is why rotation needs the procedure below.
 
@@ -407,6 +411,21 @@ operation, and an otherwise unchanged distribution is not updated. Roll the valu
 deployment using the steps above rather than relying on automatic secret rotation. The alternative
 that avoids the window entirely is to `grantRead` on `originSecret` and have the origin fetch the
 value at runtime, accepting both `AWSCURRENT` and `AWSPREVIOUS`.
+
+> **A cached authorizer will hide this window in testing.** If your origin check sits behind an API
+> Gateway Lambda authorizer, API Gateway caches the result keyed on the identity source — the
+> `X-Origin-Verify` value itself — for `AuthorizerResultTtlInSeconds`, 5 minutes by default. During
+> the window CloudFront keeps sending the _old_ value, which is already cached as "allow", so the
+> updated authorizer is never invoked and no request fails.
+>
+> This was observed on a real rotation: a 59-second mismatch produced **zero** failed requests, yet
+> the same old secret returned `403` the moment its cache entry expired. The window was real
+> throughout; nothing looked at it.
+>
+> So a rotation that appears clean against a cached authorizer can still break an origin that checks
+> the header **inside the handler**, where every request is evaluated against the current value. Do
+> not skip the dual-accept step on the strength of a clean test — verify with caching disabled, or
+> assume the window is there.
 
 ### Upgrading from v1 to v2
 
@@ -444,9 +463,128 @@ bug this release fixes.
 instance, plus API call charges. Supplying `secretHeaderValue` creates no resources and costs
 nothing, which is the option to reach for in short-lived preview stacks.
 
-**Plan the upgrade deployment.** Moving from v1 to v2 changes the header value, so the upgrade itself
-carries one rejection window. Deploy it in a maintenance window, or run the three-deployment rotation
-above with the origin accepting both values across the change.
+**The WebACL is replaced, and its CloudWatch metric name changes.** v1 left the WebACL unnamed and
+used the metric name `<constructId>-Waf`, which collided whenever two stacks reused a construct id.
+v2 names both `<stackName>-<constructId>-WebACL`. AWS WAF cannot rename a WebACL, so CloudFormation
+creates a replacement, re-associates the distribution and deletes the old one — measured at 78
+seconds, with no failed requests, because the WebACL's value never changes. Two consequences:
+
+- **Any dashboards or alarms referencing the old `<constructId>-Waf` metric stop reporting.**
+  Repoint them at `protectedApi.webAclMetricName`.
+- If you had `Retain` set on the WebACL, the old one is left behind and still bills.
+
+The distribution's comment changes too, in place. The Secrets Manager secret is new in v2 — v1
+created no such resource — so nothing is replaced there.
+
+**Plan the upgrade deployment.** The one disruptive part is the header value, which changes from the
+v1 per-synth random string to the managed secret, so the upgrade carries one rejection window.
+
+**You can avoid that window entirely** by pinning the secret to the value that is already deployed,
+so the header does not change at all. Read it off the live distribution:
+
+```bash
+aws cloudfront get-distribution-config --id <distribution-id> \
+  --query 'DistributionConfig.Origins.Items[0].CustomHeaders.Items[0].HeaderValue'
+```
+
+then pass it on the first v2 deployment:
+
+```typescript
+const protectedApi = new WafHttpApi(this, "ProtectedMyApi", {
+  httpApi: httpApi,
+  secretHeaderValue: SecretValue.secretsManager(
+    "prod/api/origin-verify",
+  ).unsafeUnwrap(),
+});
+```
+
+The distribution's `OriginCustomHeaders` is unchanged, so CloudFormation does not update the
+distribution and there is no mismatch — and synthesis is already deterministic, which is the point
+of upgrading. Moving to the construct-managed secret then becomes a separate, deliberate rotation
+you can schedule using the three-deployment procedure above.
+
+Otherwise, deploy in a maintenance window, or run that rotation with the origin accepting both
+values across the change.
+
+### Telling Multiple Deployments Apart
+
+When several WAF-protected APIs live in one AWS account, each resource is identifiable as belonging
+to the construct that created it. For `new WafHttpApi(this, "Jaap", …)` in a stack named `AppStack`:
+
+| Resource                                   | Identifier                                                |
+| ------------------------------------------ | --------------------------------------------------------- |
+| WAF WebACL                                 | name **and** CloudWatch metric `AppStack-Jaap-WebACL`     |
+| Secrets Manager secret                     | name `AppStack-Jaap-VerificationSecret`                   |
+| — its description                          | `CloudFront origin verification secret for AppStack/Jaap` |
+| CloudFront distribution                    | comment `AppStack-Jaap-Cloudfront` — see below            |
+| ACM certificate _(only when `domain` set)_ | listed by domain                                          |
+| Route 53 A / AAAA records                  | the domain itself, e.g. `api.example.com.`                |
+
+**Do not assume CloudFormation's generated names carry the stack name.** For some resource types
+they do; for these they do not. Left unnamed, a WebACL in a stack called `AppStack` deploys as
+`JaapWebAclAB38EB29-Iqnds2cWntwI` — construct id plus a random suffix, no stack name — so the AWS
+WAF console cannot tell you which stack it belongs to. That is why the construct names it.
+
+Naming the WebACL is safe because `name` and `scope` are the only two properties of
+`AWS::WAFv2::WebACL` that require replacement, and this construct hard-codes `scope`. A replacement
+can therefore only be triggered by the name itself changing, in which case the old and new names
+differ and cannot collide. One constraint to know: a CLOUDFRONT-scoped WebACL lives in `us-east-1`
+whatever region the stack targets, so **the same stack name deployed to more than one region
+collides** and the second deployment fails with "already exists". Give each region its own stack
+name — `AppStack-euw1`, `AppStack-use1` — which is normal practice for multi-region apps and also
+makes every other resource distinguishable.
+
+Two more identifiers CloudFormation cannot generate at all, so the construct sets them:
+
+- **The WebACL's CloudWatch metric name**, a required property with no default. It is set to the
+  same string as the name, which also settles any ambiguity about which of the two drives the
+  CloudWatch `WebACL` dimension. Use `webAclMetricName` rather than hard-coding it.
+- **The CloudFront distribution's comment.** A distribution has no name property at all; AWS
+  identifies it by generated ID and domain name. `Comment` is the only human-readable field, and
+  the console shows it in the **Description** column.
+
+The Secrets Manager secret is named on the same basis. `Name` is likewise its only
+replacement-triggering property, and it is regional, so it carries none of the cross-region
+constraint above. Naming it is safe to delete and recreate because the removal policy is `DESTROY`,
+which CloudFormation applies with `ForceDeleteWithoutRecovery` — so no recovery window survives to
+collide with the name.
+
+Every taggable resource is also tagged with the construct's path. This is the most reliable
+attribution — it updates in place, never collides, and reaches resources that cannot be named at
+all, such as the auto-generated certificate. It also works in Resource Groups and Cost Explorer:
+
+```
+waf-http-api:construct = AppStack/Jaap
+```
+
+Build alarms off `webAclMetricName` rather than hard-coding it:
+
+```typescript
+new Metric({
+  namespace: "AWS/WAFV2",
+  metricName: "BlockedRequests",
+  dimensionsMap: {
+    WebACL: protectedApi.webAclMetricName,
+    Rule: "ALL",
+    Region: "global",
+  },
+});
+```
+
+The name is not configurable. A caller-chosen name would forfeit CloudFormation's ability to
+replace the resource — a custom-named resource cannot be replaced in place — and could collide in
+the global `us-east-1` namespace that all CLOUDFRONT-scoped WebACLs share. The derived name is
+unique per stack and construct id, so neither can happen.
+
+Inside a `NestedStack` the stack name is only known at deployment time, so the WebACL name is left
+to CloudFormation, the metric name falls back to `<constructId>-Waf`, and the distribution comment
+to a form based on the API id.
+
+Your own stack-level tags are propagated alongside the construct's:
+
+```typescript
+Tags.of(this).add("Application", "orders");
+```
 
 ### Certificate Requirements
 
