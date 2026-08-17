@@ -111,7 +111,7 @@ class TestWafHttpApiExampleStack:
         template.has_resource_properties("AWS::Lambda::Function", {
             "Environment": {
                 "Variables": {
-                    "CLOUDFRONT_SECRET": assertions.Match.any_value()
+                    "ACCEPTED_ORIGIN_SECRETS": assertions.Match.any_value()
                 }
             }
         })

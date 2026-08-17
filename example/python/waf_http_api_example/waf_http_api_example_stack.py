@@ -73,8 +73,11 @@ def handler(event, context):
         identity_list = (event or {}).get('identitySource') or []
         identity = identity_list[0] if isinstance(identity_list, list) and identity_list else None
         provided = identity or headers.get('x-origin-verify') or headers.get('X-Origin-Verify')
-        expected = os.environ.get('CLOUDFRONT_SECRET')
-        ok = bool(provided) and bool(expected) and provided == expected
+        # Accept every value the construct currently considers valid. While a rotation is in
+        # flight this holds both the new secret and the one CloudFront is still sending, which
+        # is what keeps the rotation free of rejected requests.
+        accepted = [v for v in (os.environ.get('ACCEPTED_ORIGIN_SECRETS') or '').split(',') if v]
+        ok = bool(provided) and provided in accepted
         return { 'isAuthorized': ok }
     except Exception as e:
         print('Authorizer error:', e)
@@ -155,14 +158,24 @@ def handler(event, context):
             # avoid the secret's monthly cost in a short-lived stack:
             # secret_header_value=SecretValue.secrets_manager(
             #     'prod/api/origin-verify').unsafe_unwrap(),
+            #
+            # To rotate to a new secret, increment this by one and deploy. The construct
+            # keeps the previous generation valid, so no request is rejected while the
+            # CloudFront distribution catches up. Roll one generation at a time.
+            # origin_secret_generation=1,
         )
 
-        # Provide the CloudFront secret to the authorizer. By default this is a
-        # CloudFormation dynamic reference that resolves during deployment, which works
-        # here because a Lambda environment variable is a resource property.
+        # Give the authorizer every accepted value, not just the one CloudFront sends now.
+        # These are CloudFormation dynamic references that resolve during deployment, which
+        # works here because a Lambda environment variable is a resource property.
+        #
+        # Using `accepted_secret_values` rather than `secret_header_value` is what makes
+        # rotation free of rejected requests: a CloudFront distribution takes about a minute
+        # longer to update than this function, so during a rotation it keeps sending the
+        # previous value.
         authorizer_lambda.add_environment(
-            "CLOUDFRONT_SECRET",
-            protected_api.secret_header_value
+            "ACCEPTED_ORIGIN_SECRETS",
+            ",".join(protected_api.accepted_secret_values)
         )
 
         # Alternatively, let the authorizer read the secret at runtime instead of

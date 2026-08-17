@@ -88,7 +88,7 @@ describe("WafHttpApiExampleStack", () => {
     template.hasResourceProperties("AWS::Lambda::Function", {
       Environment: {
         Variables: Match.objectLike({
-          CLOUDFRONT_SECRET: Match.anyValue(),
+          ACCEPTED_ORIGIN_SECRETS: Match.anyValue(),
         }),
       },
     });

@@ -52,8 +52,11 @@ export class WafHttpApiExampleStack extends cdk.Stack {
       const headers = (event && event.headers) || {};
       const identity = (event && Array.isArray(event.identitySource) && event.identitySource[0]) || undefined;
       const provided = identity || headers['x-origin-verify'] || headers['X-Origin-Verify'];
-            const expected = process.env.CLOUDFRONT_SECRET;
-            const ok = !!provided && !!expected && provided === expected;
+            // Accept every value the construct currently considers valid. While a rotation is in
+            // flight this holds both the new secret and the one CloudFront is still sending, which
+            // is what keeps the rotation free of rejected requests.
+            const accepted = (process.env.ACCEPTED_ORIGIN_SECRETS || '').split(',').filter(Boolean);
+            const ok = !!provided && accepted.includes(provided);
             return { isAuthorized: ok };
           } catch (e) {
             console.error('Authorizer error', e);
@@ -134,14 +137,23 @@ export class WafHttpApiExampleStack extends cdk.Stack {
       // Supply your own value instead if you want to own its lifecycle, or to avoid
       // the secret's monthly cost in a short-lived stack:
       // secretHeaderValue: SecretValue.secretsManager('prod/api/origin-verify').unsafeUnwrap(),
+      //
+      // To rotate to a new secret, increment this by one and deploy. The construct keeps
+      // the previous generation valid, so no request is rejected while the CloudFront
+      // distribution catches up. Roll one generation at a time.
+      // originSecretGeneration: 1,
     });
 
-    // Provide the CloudFront secret to the authorizer. By default this is a
-    // CloudFormation dynamic reference that resolves during deployment, which works
-    // here because a Lambda environment variable is a resource property.
+    // Give the authorizer every accepted value, not just the one CloudFront sends now.
+    // These are CloudFormation dynamic references that resolve during deployment, which
+    // works here because a Lambda environment variable is a resource property.
+    //
+    // Using `acceptedSecretValues` rather than `secretHeaderValue` is what makes rotation
+    // free of rejected requests: a CloudFront distribution takes about a minute longer to
+    // update than this function, so during a rotation it keeps sending the previous value.
     authorizerLambda.addEnvironment(
-      "CLOUDFRONT_SECRET",
-      protectedApi.secretHeaderValue,
+      "ACCEPTED_ORIGIN_SECRETS",
+      protectedApi.acceptedSecretValues.join(","),
     );
 
     // Alternatively, let the authorizer read the secret at runtime instead of
