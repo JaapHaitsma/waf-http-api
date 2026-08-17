@@ -187,7 +187,7 @@ Any object.
 | <code><a href="#waf-http-api.WafHttpApi.property.customDomain">customDomain</a></code>                 | <code>string</code>                                          | The custom domain name configured for this distribution.                                                                                        |
 | <code><a href="#waf-http-api.WafHttpApi.property.originSecret">originSecret</a></code>                 | <code>aws-cdk-lib.aws_secretsmanager.ISecret</code>          | The AWS Secrets Manager secret holding the origin verification value.                                                                           |
 | <code><a href="#waf-http-api.WafHttpApi.property.previousOriginSecret">previousOriginSecret</a></code> | <code>aws-cdk-lib.aws_secretsmanager.ISecret</code>          | The previous generation of the construct-managed secret, still accepted during a rotation.                                                      |
-| <code><a href="#waf-http-api.WafHttpApi.property.webAclName">webAclName</a></code>                     | <code>string</code>                                          | The name of the AWS WAF WebACL, `<stackName>-<constructId>-WebACL`.                                                                             |
+| <code><a href="#waf-http-api.WafHttpApi.property.webAclName">webAclName</a></code>                     | <code>string</code>                                          | The explicit name given to the AWS WAF WebACL, if one was requested via the `webAclName` prop.                                                  |
 
 ---
 
@@ -334,7 +334,8 @@ The CloudWatch metric name of the AWS WAF WebACL.
 
 Unlike the physical name, CloudFormation cannot generate this — it is a required property with
 no default — so the construct sets it to `<stackName>-<constructId>-WebACL`. That keeps metrics
-from two stacks apart even when they reuse the same construct id.
+from two stacks apart even when they reuse the same construct id. If you supplied
+`webAclName`, that value is used instead.
 
 ---
 
@@ -572,17 +573,13 @@ public readonly webAclName: string;
 
 - _Type:_ string
 
-The name of the AWS WAF WebACL, `<stackName>-<constructId>-WebACL`.
+The explicit name given to the AWS WAF WebACL, if one was requested via the `webAclName` prop.
 
-The construct always names the WebACL itself. CloudFormation's generated name for this
-resource type carries no stack name — an unnamed WebACL in `AppStack` deploys as
-`ProtectedApiWebAcl<hash>-<random>` — so the console cannot tell you which deployment it
-belongs to.
+`undefined` by default, because the construct lets CloudFormation generate the physical name —
+`<stackName>-<logicalId>-<random>`, which already identifies the stack and this construct, and
+which preserves CloudFormation's ability to replace the resource.
 
-This is `undefined` only when the stack name is an unresolved token, as inside a `NestedStack`,
-where it cannot be sanitized at synthesis. CloudFormation then generates the name.
-
-The same string is used as the CloudWatch metric name, exposed as `webAclMetricName`.
+To reference the WebACL in CloudWatch, use `webAclMetricName` instead: it is always defined.
 
 ---
 
@@ -627,6 +624,7 @@ const wafHttpApiProps: WafHttpApiProps = { ... }
 | <code><a href="#waf-http-api.WafHttpApiProps.property.originSecretGeneration">originSecretGeneration</a></code> | <code>number</code>                                          | Optional: The generation of the construct-managed origin verification secret.                                                           |
 | <code><a href="#waf-http-api.WafHttpApiProps.property.secretHeaderValue">secretHeaderValue</a></code>           | <code>string</code>                                          | Optional: A fixed value for the CloudFront origin verification secret header (`WafHttpApi.SECRET_HEADER_NAME`, i.e. `X-Origin-Verify`). |
 | <code><a href="#waf-http-api.WafHttpApiProps.property.wafRules">wafRules</a></code>                             | <code>aws-cdk-lib.aws_wafv2.CfnWebACL.RuleProperty[]</code>  | Optional: Custom WAF rules to apply to the WebACL.                                                                                      |
+| <code><a href="#waf-http-api.WafHttpApiProps.property.webAclName">webAclName</a></code>                         | <code>string</code>                                          | Optional: An explicit name for the AWS WAF WebACL.                                                                                      |
 
 ---
 
@@ -930,4 +928,43 @@ wafRules: [
     },
   },
 ];
+```
+
+##### `webAclName`<sup>Optional</sup> <a name="webAclName" id="waf-http-api.WafHttpApiProps.property.webAclName"></a>
+
+```typescript
+public readonly webAclName: string;
+```
+
+- _Type:_ string
+- _Default:_ unset, so CloudFormation generates `<stackName>-<logicalId>-<random>`
+
+Optional: An explicit name for the AWS WAF WebACL.
+
+By default the construct does not name the WebACL, so CloudFormation generates
+`<stackName>-<logicalId>-<random>` — which already identifies the stack and this construct.
+The CloudWatch metric name is set separately to `<stackName>-<constructId>-WebACL` and is
+exposed as `webAclMetricName`.
+
+Set this only if you need a specific name. It must match `^[0-9A-Za-z_-]{1,128}$` — letters,
+digits, hyphens and underscores only — and cannot be `All` or `Default_Action`, which AWS WAF
+reserves. It is also used as the CloudWatch metric name.
+
+**Changing this value replaces the WebACL.** AWS WAF does not allow a rename, so
+CloudFormation creates the replacement, re-associates the CloudFront distribution and deletes
+the old one — measured at 78 seconds end to end, with no impact on traffic, because the old
+WebACL stays associated until the new one takes over.
+
+Note also that a CLOUDFRONT-scoped WebACL lives in `us-east-1` whatever region the stack
+targets, so the name must be unique across every region you deploy this stack to.
+
+---
+
+_Example_
+
+```typescript
+const protectedApi = new WafHttpApi(this, "MyApi", {
+  httpApi: myHttpApi,
+  webAclName: "orders-api-production",
+});
 ```

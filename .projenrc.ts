@@ -22,6 +22,9 @@ const project = new awscdk.AwsCdkConstructLibrary({
   cdkVersion: "2.200.2",
   defaultReleaseBranch: "main",
   jsiiVersion: "~6.0.0",
+  // Match the TypeScript that jsii itself compiles with (it pins ~6.0), so the dev-time
+  // compiler and the one producing the published output agree.
+  typescriptVersion: "~6.0.0",
   jest: true,
   projenrcTs: true,
   repositoryUrl: "https://github.com/JaapHaitsma/waf-http-api.git",

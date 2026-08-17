@@ -6,6 +6,7 @@
     },
     {
       "name": "@types/node",
+      "version": "ts6.0",
       "type": "build"
     },
     {
@@ -102,6 +103,7 @@
     },
     {
       "name": "typescript",
+      "version": "~6.0.0",
       "type": "build"
     },
     {
